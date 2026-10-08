@@ -25,3 +25,9 @@ export function addMinutes(d: Date, minutes: number): Date {
 export function minutesBetween(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / MINUTE_MS;
 }
+
+/** Trim a Postgres `time` value ('HH:MM:SS[.sss]') to a local 'HH:MM'. */
+export function clockHhMm(value: string): string {
+  return value.slice(0, 5);
+}
+

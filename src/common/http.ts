@@ -63,3 +63,11 @@ function headerString(value: string | string[] | undefined): string | undefined 
   if (Array.isArray(value)) return value[0];
   return value;
 }
+
+/** Read a required path parameter as a string under Express 5's looser param types. */
+export function pathParam(req: Request, name: string): string {
+  const value: unknown = (req.params as Record<string, unknown>)[name];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  throw new AppError(400, 'VALIDATION_FAILED', `Missing path parameter "${name}"`);
+}
