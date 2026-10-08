@@ -1,0 +1,169 @@
+{
+  "info": {
+    "name": "Unified Service Scheduler",
+    "description": "Scenario A — Unified Service Scheduler.\n\nRun the requests top to bottom: **Search slots** stores the chosen bay/technician/time into the environment, and **Book appointment** stores the appointment id. Every response has test assertions.\n\nStart the app first (`docker compose up --build`, or `npm run dev` against a PostgreSQL 17) and pick an environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Refresh the time-based variables used by the slot search and diary views.",
+          "const dayMs = 86400000;",
+          "const now = Date.now();",
+          "const desired = pm.environment.get('desiredAt');",
+          "if (!desired || Date.parse(desired) < now) { pm.environment.set('desiredAt', new Date(now + dayMs).toISOString()); }",
+          "const from = pm.environment.get('from');",
+          "if (!from || Date.parse(from) < now - 30 * dayMs) { pm.environment.set('from', new Date(now).toISOString()); }",
+          "const to = pm.environment.get('to');",
+          "if (!to || Date.parse(to) < now) { pm.environment.set('to', new Date(now + 7 * dayMs).toISOString()); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Service health",
+      "item": [
+        {
+          "name": "Health",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/healthz", "host": ["{{baseUrl}}"], "path": ["healthz"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 ok', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.eql({ status: 'ok' }); });"] } }]
+        },
+        {
+          "name": "Readiness",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/readyz", "host": ["{{baseUrl}}"], "path": ["readyz"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 ready', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ready'); });"] } }]
+        },
+        {
+          "name": "Metrics",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/metrics", "host": ["{{baseUrl}}"], "path": ["metrics"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 and exposes booking counters', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('appointments_total'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Reference data",
+      "item": [
+        {
+          "name": "List service types",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/service-types", "host": ["{{baseUrl}}"], "path": ["service-types"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with service types', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().service_types.length).to.be.above(0); });"] } }]
+        },
+        {
+          "name": "Get dealership",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/dealerships/{{dealershipId}}", "host": ["{{baseUrl}}"], "path": ["dealerships", "{{dealershipId}}"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with hours', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().hours.length).to.be.above(0); });"] } }]
+        },
+        {
+          "name": "Get vehicle by VIN",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/vehicles/{{vin}}", "host": ["{{baseUrl}}"], "path": ["vehicles", "{{vin}}"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with the vehicle', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().vin).to.eql(pm.environment.get('vin')); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. Booking flow (run in order)",
+      "item": [
+        {
+          "name": "Search slots  (stores the picked slot)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/slots?dealership_id={{dealershipId}}&service_type_code={{serviceTypeCode}}&vin={{vin}}&desired_at={{desiredAt}}&horizon_days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["slots"],
+              "query": [
+                { "key": "dealership_id", "value": "{{dealershipId}}" },
+                { "key": "service_type_code", "value": "{{serviceTypeCode}}" },
+                { "key": "vin", "value": "{{vin}}" },
+                { "key": "desired_at", "value": "{{desiredAt}}" },
+                { "key": "horizon_days", "value": "7" }
+              ]
+            }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 with at least one slot', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().slots.length).to.be.above(0); });",
+            "const slots = pm.response.json().slots || [];",
+            "if (slots.length) {",
+            "  pm.environment.set('bayId', slots[0].bayId);",
+            "  pm.environment.set('technicianId', slots[0].technicianId);",
+            "  pm.environment.set('startAt', slots[0].startAt);",
+            "  pm.environment.set('endAt', slots[0].endAt);",
+            "  console.log('picked slot', slots[0]);",
+            "}",
+            "// A 422 for a past desired_at is the documented behaviour; guard the happy path."
+          ] } }]
+        },
+        {
+          "name": "Book appointment  (201 HELD)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dealership_id\": \"{{dealershipId}}\",\n  \"service_type_code\": \"{{serviceTypeCode}}\",\n  \"vin\": \"{{vin}}\",\n  \"customer\": { \"name\": \"Postman Customer\", \"phone\": \"+441234567890\", \"email\": \"postman@example.com\" },\n  \"bay_id\": \"{{bayId}}\",\n  \"technician_id\": \"{{technicianId}}\",\n  \"start_at\": \"{{startAt}}\",\n  \"end_at\": \"{{endAt}}\",\n  \"idempotency_key\": \"{{$guid}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/appointments", "host": ["{{baseUrl}}"], "path": ["appointments"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 HELD', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().appointment.status).to.eql('HELD'); });",
+            "const appt = pm.response.json().appointment;",
+            "if (appt) { pm.environment.set('appointmentId', appt.id); }"
+          ] } }]
+        },
+        {
+          "name": "Book the SAME slot again  (409 slot_taken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dealership_id\": \"{{dealershipId}}\",\n  \"service_type_code\": \"{{serviceTypeCode}}\",\n  \"vin\": \"{{vin}}\",\n  \"customer\": { \"name\": \"Second Customer\", \"email\": \"second@example.com\" },\n  \"bay_id\": \"{{bayId}}\",\n  \"technician_id\": \"{{technicianId}}\",\n  \"start_at\": \"{{startAt}}\",\n  \"end_at\": \"{{endAt}}\",\n  \"idempotency_key\": \"{{$guid}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/appointments", "host": ["{{baseUrl}}"], "path": ["appointments"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 slot_taken with alternatives', () => { pm.response.to.have.status(409); const b = pm.response.json(); pm.expect(b.error).to.eql('slot_taken'); pm.expect(b.next_available).to.be.an('array'); });"
+          ] } }]
+        },
+        {
+          "name": "Confirm appointment  (HELD -> CONFIRMED)",
+          "request": { "method": "POST", "header": [], "body": { "mode": "raw", "raw": "" }, "url": { "raw": "{{baseUrl}}/appointments/{{appointmentId}}/confirm", "host": ["{{baseUrl}}"], "path": ["appointments", "{{appointmentId}}", "confirm"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 CONFIRMED', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointment.status).to.eql('CONFIRMED'); });"] } }]
+        },
+        {
+          "name": "Get appointment",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/appointments/{{appointmentId}}", "host": ["{{baseUrl}}"], "path": ["appointments", "{{appointmentId}}"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 CONFIRMED', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointment.status).to.eql('CONFIRMED'); });"] } }]
+        },
+        {
+          "name": "Cancel appointment  (-> CANCELLED)",
+          "request": { "method": "POST", "header": [], "body": { "mode": "raw", "raw": "" }, "url": { "raw": "{{baseUrl}}/appointments/{{appointmentId}}/cancel", "host": ["{{baseUrl}}"], "path": ["appointments", "{{appointmentId}}", "cancel"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 CANCELLED', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointment.status).to.eql('CANCELLED'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Diary views",
+      "item": [
+        {
+          "name": "Technician calendar",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/technicians/{{technicianId}}/appointments?from={{from}}&to={{to}}", "host": ["{{baseUrl}}"], "path": ["technicians", "{{technicianId}}", "appointments"], "query": [{ "key": "from", "value": "{{from}}" }, { "key": "to", "value": "{{to}}" }] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with a chronological list', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointments).to.be.an('array'); });"] } }]
+        },
+        {
+          "name": "Dealership capacity",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/dealerships/{{dealershipId}}/capacity?from={{from}}&to={{to}}", "host": ["{{baseUrl}}"], "path": ["dealerships", "{{dealershipId}}", "capacity"], "query": [{ "key": "from", "value": "{{from}}" }, { "key": "to", "value": "{{to}}" }] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 with bays and technicians', () => { pm.response.to.have.status(200); const b = pm.response.json(); pm.expect(b.bays).to.be.an('array'); pm.expect(b.technicians).to.be.an('array'); });"] } }]
+        }
+      ]
+    }
+  ]
+}

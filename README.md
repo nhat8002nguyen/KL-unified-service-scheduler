@@ -176,3 +176,12 @@ npm run test:integration
 - **Contract:** endpoint behaviour with fake adapters (supertest).
 - **Integration:** real PostgreSQL — schema/partitioning, reserve + idempotency,
   lifecycle, reaper, and the parallel-booking race (one `201`, one `409`).
+
+### Manual API testing (Postman)
+
+`postman/` ships a ready-to-run collection and two environments — see
+[postman/README.md](postman/README.md). Import them, pick an environment, and
+run the requests top to bottom: *Search slots* stores the chosen slot and
+*Book appointment* stores the id, so the rest of the flow just works.
+`test/contract/postman.test.ts` keeps the collection honest (valid JSON, every
+`{{variable}}` defined, every request asserted).
