@@ -12,8 +12,10 @@ const maybe = url ? describe : describe.skip;
 maybe('appointment schema', () => {
   let pool: Pool;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pool = new Pool({ connectionString: url });
+    // Idempotent across runs: clear any rows this test created previously.
+    await pool.query("delete from appointment where idempotency_key like 'schema-test-%'");
   });
   afterAll(async () => {
     await pool?.end();
