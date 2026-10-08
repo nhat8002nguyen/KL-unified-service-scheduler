@@ -5,6 +5,8 @@ import { catalogRouter } from './catalog/catalog.router';
 import type { CatalogRepository } from './catalog/catalog.types';
 import { errorHandler, notFoundHandler } from './common/errors';
 import { requestContext } from './common/http';
+import { diaryRouter } from './diary/diary.router';
+import type { DiaryService } from './diary/diary.types';
 import { resourcesRouter, type ResourcesDeps } from './resources/resources.router';
 import { httpMetricsMiddleware, metricsHandler } from './telemetry/metrics';
 
@@ -18,6 +20,7 @@ export interface AppDeps {
   catalog?: CatalogRepository;
   resources?: ResourcesDeps;
   booking?: BookingService;
+  diary?: DiaryService;
 }
 
 const notImplemented: RequestHandler = (req, res) => {
@@ -64,6 +67,13 @@ export function buildApp(deps: AppDeps = {}): Express {
     app.use(bookingRouter(deps.booking));
   } else {
     app.get('/slots', notImplemented);
+  }
+
+  if (deps.diary) {
+    app.use(diaryRouter(deps.diary));
+  } else {
+    app.get('/technicians/:id/appointments', notImplemented);
+    app.get('/dealerships/:id/capacity', notImplemented);
   }
 
   app.use(notFoundHandler);
