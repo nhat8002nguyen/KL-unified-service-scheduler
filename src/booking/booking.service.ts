@@ -130,7 +130,9 @@ export class BookingServiceImpl implements BookingService {
     if (!technician) return invalid('technician is not qualified or not at this dealership');
 
     if (!withinOpenHours(dealership, start, end)) return invalid('slot is outside dealership hours');
-    if (!withinShift(technician, start, end)) return invalid('slot is outside the technician shift');
+    if (!withinShift(technician, dealership.timezone, start, end)) {
+      return invalid('slot is outside the technician shift');
+    }
 
     const customer = await this.deps.customers.upsert(input.customer);
 
@@ -217,8 +219,7 @@ function withinOpenHours(dealership: Dealership, start: Date, end: Date): boolea
   return s >= hhMmToMinutes(hours.open) && e <= hhMmToMinutes(hours.close) && e > s;
 }
 
-function withinShift(technician: Technician, start: Date, end: Date): boolean {
-  const tz = 'UTC';
+function withinShift(technician: Technician, tz: string, start: Date, end: Date): boolean {
   if (!sameLocalDay(start, end, tz)) return false;
   const shift = technician.shifts.find((s) => s.weekday === localWeekday(start, tz));
   if (!shift) return false;
