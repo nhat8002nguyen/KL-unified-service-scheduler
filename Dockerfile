@@ -6,7 +6,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci
 
-COPY tsconfig.json knexfile.ts ./
+COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
