@@ -50,6 +50,7 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
 
   const slots: Slot[] = [];
   const startDay = localDateOf(now, tz);
+  const nowMs = Math.floor(now.getTime() / 60_000) * 60_000;
 
   for (let dayOffset = 0; dayOffset <= input.horizonDays; dayOffset += 1) {
     const cal = new Date(Date.UTC(startDay.year, startDay.month - 1, startDay.day + dayOffset));
@@ -81,23 +82,23 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
         if (techOpen.length === 0) continue;
 
         for (const free of intersect(bayOpen, techOpen)) {
-          if (minutes(free) < duration) continue;
-          if (free.start.getTime() < now.getTime()) continue;
+          const earliest = Math.max(free.start.getTime(), nowMs);
+          const latestStart = free.end.getTime() - duration * 60_000;
+          if (latestStart < earliest) continue;
 
-          const end = new Date(free.start.getTime() + duration * 60_000);
-          if (end.getTime() > free.end.getTime()) continue;
-
+          // Anchor at the desired time when it fits the block, else at the earliest usable start.
+          const startMs = Math.min(Math.max(desired.getTime(), earliest), latestStart);
           const isPreferred = preferred.has(bay.bayTypeCode);
           const score =
-            Math.abs(free.start.getTime() - desired.getTime()) / 60_000 +
+            Math.abs(startMs - desired.getTime()) / 60_000 +
             (isPreferred ? 0 : PREFERRED_BAY_PENALTY);
 
           slots.push({
             dealershipId,
             bayId: bay.id,
             technicianId: tech.id,
-            startAt: free.start.toISOString(),
-            endAt: end.toISOString(),
+            startAt: new Date(startMs).toISOString(),
+            endAt: new Date(startMs + duration * 60_000).toISOString(),
             preferredBay: isPreferred,
             score,
           });

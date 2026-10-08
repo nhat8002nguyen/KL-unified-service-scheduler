@@ -94,4 +94,16 @@ describe('availability engine', () => {
       expect(Date.parse(s.endAt)).toBeLessThanOrEqual(Date.parse(at('17:00')));
     }
   });
+
+  it('offers a same-day slot when the free block began before now', () => {
+    // now is 10:00; the block is 08:00-17:00 and the customer wants 15:00.
+    const slots = findSlots(
+      { dealershipId: 'd1', serviceType: oilChange, desiredAt: at('15:00'), horizonDays: 0, limit: 10, now: at('10:00') },
+      ctx(),
+    );
+
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.startAt).toBe(at('15:00'));
+    expect(Date.parse(slots[0]?.startAt ?? '')).toBeGreaterThanOrEqual(Date.parse(at('10:00')));
+  });
 });

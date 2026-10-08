@@ -37,13 +37,17 @@ export async function up(knex: Knex): Promise<void> {
     );
   }
 
+  // Partial exclusion constraints: only active rows occupy a resource, so a
+  // CANCELLED/COMPLETED/NO_SHOW appointment frees its interval for rebooking.
   await knex.raw(`
     alter table appointment add constraint no_bay_overlap
       exclude using gist (dealership_id with =, service_bay_id with =, tstzrange(start_at, end_at) with &&)
+      where (status in ('HELD','CONFIRMED'))
   `);
   await knex.raw(`
     alter table appointment add constraint no_tech_overlap
       exclude using gist (dealership_id with =, technician_id with =, tstzrange(start_at, end_at) with &&)
+      where (status in ('HELD','CONFIRMED'))
   `);
 
   await knex.raw(

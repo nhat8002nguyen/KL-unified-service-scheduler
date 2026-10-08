@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import knexLib from 'knex';
 import { Pool } from 'pg';
 import { PgAppointmentRepo } from '../../src/booking/booking.repo';
 import type { ReserveInput } from '../../src/booking/booking.types';
+import { knexConfig } from '../../src/db/knexconfig';
 import { SEED } from '../../src/db/seed-ids';
+import { seed } from '../../src/db/seeds/001_demo';
 import { PgOutboxWriter } from '../../src/outbox/outbox.repo';
 
 const url = process.env['DATABASE_URL'];
@@ -131,5 +134,33 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
     const after = await repo.getById(created.appointment.id);
     expect(after?.status).toBe('CANCELLED');
     expect(after?.cancelledReason).toBe('hold_expired');
+  });
+
+  it('a cancelled appointment frees its interval for rebooking (exclusion ignores non-active rows)', async () => {
+    const stamp = Date.now();
+    const first = await repo.createWithReserve(reserve(`reserve-${stamp}-free1`, 20));
+    expect(first.outcome).toBe('created');
+    if (first.outcome !== 'created') return;
+
+    await repo.updateStatus(first.appointment.id, ['HELD'], 'CANCELLED', { cancelledReason: 'test' });
+
+    const again = await repo.createWithReserve(reserve(`reserve-${stamp}-free2`, 20));
+    expect(again.outcome).toBe('created');
+  });
+
+  it('re-running the seed does not delete existing appointments', async () => {
+    const stamp = Date.now();
+    const created = await repo.createWithReserve(reserve(`reserve-${stamp}-keep`, 21));
+    expect(created.outcome).toBe('created');
+    if (created.outcome !== 'created') return;
+
+    const db = knexLib(knexConfig());
+    try {
+      await seed(db);
+    } finally {
+      await db.destroy();
+    }
+
+    expect(await repo.getById(created.appointment.id)).not.toBeNull();
   });
 });

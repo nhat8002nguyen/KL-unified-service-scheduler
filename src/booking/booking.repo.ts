@@ -111,6 +111,18 @@ export class PgAppointmentRepo implements AppointmentRepository {
       await client.query('select id from service_bay where id = $1 for update', [input.bayId]);
       await client.query('select id from technician where id = $1 for update', [input.technicianId]);
 
+      // Re-check idempotency now that we hold the locks: a concurrent same-key
+      // submit has either committed (visible now) or is queued behind us.
+      const raced = await client.query<AppointmentRow>(
+        'select * from appointment where dealership_id = $1 and idempotency_key = $2 limit 1',
+        [input.dealershipId, input.idempotencyKey],
+      );
+      const racedRow = raced.rows[0];
+      if (racedRow) {
+        await client.query('ROLLBACK');
+        return { outcome: 'duplicate', appointment: mapAppointment(racedRow) };
+      }
+
       // Re-verify both resources are still free for the full window.
       const clash = await client.query(
         `select 1 from appointment

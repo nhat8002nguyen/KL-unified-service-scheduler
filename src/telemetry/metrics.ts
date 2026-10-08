@@ -30,7 +30,7 @@ export const appointmentOutcomes = new client.Counter({
 /** Commits rejected by a database exclusion constraint (stale search / lost race). */
 export const appointmentConflicts = new client.Counter({
   name: 'appointment_conflicts_total',
-  help: 'Booking attempts rejected by a database exclusion constraint',
+  help: 'Booking attempts rejected because the requested slot was already taken',
   registers: [registry],
 });
 

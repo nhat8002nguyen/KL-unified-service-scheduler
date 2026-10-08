@@ -102,4 +102,45 @@ maybe('concurrent booking end to end', () => {
     expect(res.text).toContain('appointments_total');
     expect(res.text).toContain('http_request_duration_seconds');
   });
+
+  it('two concurrent POSTs with the SAME idempotency key both return that appointment', async () => {
+    const desiredAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    const slotsRes = await request(app).get('/slots').query({
+      dealership_id: SEED.dealership,
+      service_type_code: 'diagnostic',
+      vin: SEED_VIN,
+      desired_at: desiredAt,
+      horizon_days: 7,
+    });
+    expect(slotsRes.status).toBe(200);
+    const slot = slotsRes.body.slots[0];
+    expect(slot).toBeDefined();
+
+    const key = `concurrency-same-${Date.now()}`;
+    const body = {
+      dealership_id: SEED.dealership,
+      service_type_code: 'diagnostic',
+      vin: SEED_VIN,
+      customer: { name: 'Retry Customer', email: 'retry@example.com' },
+      bay_id: slot.bayId,
+      technician_id: slot.technicianId,
+      start_at: slot.startAt,
+      end_at: slot.endAt,
+      idempotency_key: key,
+    };
+
+    const [a, b] = await Promise.all([
+      request(app).post('/appointments').send(body),
+      request(app).post('/appointments').send(body),
+    ]);
+
+    expect([a.status, b.status]).toEqual([201, 201]);
+    expect(a.body.appointment.id).toBe(b.body.appointment.id);
+
+    const count = await pool.query<{ n: number }>(
+      'select count(*)::int as n from appointment where idempotency_key = $1',
+      [key],
+    );
+    expect(count.rows[0]?.n).toBe(1);
+  });
 });

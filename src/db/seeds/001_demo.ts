@@ -4,13 +4,11 @@ import { SEED, SEED_TIMEZONE, SEED_VIN } from '../seed-ids';
 const WEEKDAYS_MON_FRI = [1, 2, 3, 4, 5];
 
 export async function seed(knex: Knex): Promise<void> {
-  await knex.raw(`
-    truncate table outbox, appointment,
-      technician_shift, technician_skill, service_type_bay_type, service_type_required_skill,
-      vehicle, customer, service_bay, technician, dealership_hours, dealership,
-      service_type, skill, bay_type
-    restart identity cascade
-  `);
+  // Never wipe an already-seeded database: the container runs this on every boot.
+  const existing = await knex('dealership').count<{ count: string }[]>({ count: '*' });
+  if (Number(existing[0]?.count ?? 0) > 0) {
+    return;
+  }
 
   await knex('skill').insert([
     { id: SEED.skills.general, code: 'general', name: 'General servicing' },
