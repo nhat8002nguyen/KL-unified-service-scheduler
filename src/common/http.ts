@@ -64,6 +64,11 @@ function headerString(value: string | string[] | undefined): string | undefined 
   return value;
 }
 
+/** Read a request header as a single string. */
+export function headerValue(req: Request, name: string): string | undefined {
+  return headerString(req.headers[name]);
+}
+
 /** Read a required path parameter as a string under Express 5's looser param types. */
 export function pathParam(req: Request, name: string): string {
   const value: unknown = (req.params as Record<string, unknown>)[name];

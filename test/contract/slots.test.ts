@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, it, expect } from 'vitest';
 import { buildApp } from '../../src/app';
 import { BookingServiceImpl } from '../../src/booking/booking.service';
-import type { AppointmentReader } from '../../src/booking/booking.types';
+import type { AppointmentRepository } from '../../src/booking/booking.types';
 import type { ServiceTypeDetail } from '../../src/catalog/catalog.types';
 import type { AvailabilityContext } from '../../src/availability/availability.types';
 import type { Dealership, ServiceBay, Technician } from '../../src/resources/resources.types';
@@ -36,13 +36,20 @@ const busy = [
 ];
 
 function makeApp(): ReturnType<typeof buildApp> {
-  const appointments: AppointmentReader = { busyIntervals: async () => busy };
+  const appointments: AppointmentRepository = {
+    busyIntervals: async () => busy,
+    getById: async () => null,
+    createWithReserve: async () => ({ outcome: 'conflict' }),
+    updateStatus: async () => null,
+    releaseExpiredHolds: async () => [],
+  };
   const service = new BookingServiceImpl({
     catalog: { getServiceTypeDetail: async (code) => (code === 'oil_change' ? oilChange : null), listServiceTypes: async () => [oilChange] },
     vehicles: { getByVin: async (vin) => (vin === 'VIN1' ? { id: 'v1', vin, make: 'Honda', model: 'Civic', year: 2013 } : null) },
     dealerships: { getById: async (id) => (id === dealershipId ? dealership : null) },
     bays: { listByDealership: async () => bays },
     technicians: { listQualified: async () => technicians },
+    customers: { upsert: async () => ({ id: 'c1' }) },
     appointments,
     clock: () => new Date(nowIso),
   });

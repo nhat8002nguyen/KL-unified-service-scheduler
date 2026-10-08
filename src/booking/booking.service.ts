@@ -2,8 +2,25 @@ import { findSlots } from '../availability/availability.engine';
 import type { Slot } from '../availability/availability.types';
 import type { CatalogReader } from '../catalog/catalog.types';
 import { AppError } from '../common/errors';
-import type { DealershipReader, BayReader, TechnicianReader, VehicleReader } from '../resources/resources.types';
-import type { AppointmentReader, BookingService, SearchSlotsQuery } from './booking.types';
+import { minutesBetween } from '../common/time';
+import { hhMmToMinutes, localMinuteOfDay, localWeekday, sameLocalDay } from '../common/tz';
+import type {
+  Dealership,
+  DealershipReader,
+  BayReader,
+  Technician,
+  TechnicianReader,
+  VehicleReader,
+} from '../resources/resources.types';
+import { appointmentConflicts, appointmentOutcomes } from '../telemetry/metrics';
+import type {
+  AppointmentRepository,
+  BookingService,
+  CreateAppointmentInput,
+  CreateAppointmentResult,
+  CustomerWriter,
+  SearchSlotsQuery,
+} from './booking.types';
 
 export interface BookingDeps {
   catalog: CatalogReader;
@@ -11,19 +28,23 @@ export interface BookingDeps {
   dealerships: DealershipReader;
   bays: BayReader;
   technicians: TechnicianReader;
-  appointments: AppointmentReader;
+  customers: CustomerWriter;
+  appointments: AppointmentRepository;
   /** Injectable clock for deterministic tests. */
   clock?: () => Date;
+  /** Hold TTL in minutes (from config). */
+  holdMinutes?: number;
 }
 
 const DEFAULT_HORIZON_DAYS = 7;
 const DEFAULT_LIMIT = 10;
+const DEFAULT_HOLD_MINUTES = 10;
 
 export class BookingServiceImpl implements BookingService {
   constructor(private readonly deps: BookingDeps) {}
 
   async searchSlots(query: SearchSlotsQuery): Promise<Slot[]> {
-    const now = (this.deps.clock ?? (() => new Date()))();
+    const now = this.now();
     const desired = new Date(query.desiredAt);
     if (Number.isNaN(desired.getTime())) {
       throw new AppError(422, 'VALIDATION_FAILED', 'desired_at is not a valid instant');
@@ -40,15 +61,9 @@ export class BookingServiceImpl implements BookingService {
       this.deps.vehicles.getByVin(query.vin),
       this.deps.dealerships.getById(query.dealershipId),
     ]);
-    if (!serviceType) {
-      throw new AppError(404, 'NOT_FOUND', `Unknown service type ${query.serviceTypeCode}`);
-    }
-    if (!vehicle) {
-      throw new AppError(404, 'NOT_FOUND', `Unknown VIN ${query.vin}`);
-    }
-    if (!dealership) {
-      throw new AppError(404, 'NOT_FOUND', `Unknown dealership ${query.dealershipId}`);
-    }
+    if (!serviceType) throw new AppError(404, 'NOT_FOUND', `Unknown service type ${query.serviceTypeCode}`);
+    if (!vehicle) throw new AppError(404, 'NOT_FOUND', `Unknown VIN ${query.vin}`);
+    if (!dealership) throw new AppError(404, 'NOT_FOUND', `Unknown dealership ${query.dealershipId}`);
 
     const from = now.toISOString();
     const to = new Date(now.getTime() + horizonDays * 86_400_000).toISOString();
@@ -71,4 +86,112 @@ export class BookingServiceImpl implements BookingService {
       { dealership, bays, technicians, busy },
     );
   }
+
+  async createAppointment(input: CreateAppointmentInput): Promise<CreateAppointmentResult> {
+    const now = this.now();
+
+    const [serviceType, vehicle, dealership] = await Promise.all([
+      this.deps.catalog.getServiceTypeDetail(input.serviceTypeCode),
+      this.deps.vehicles.getByVin(input.vin),
+      this.deps.dealerships.getById(input.dealershipId),
+    ]);
+    if (!serviceType) throw new AppError(404, 'NOT_FOUND', `Unknown service type ${input.serviceTypeCode}`);
+    if (!vehicle) throw new AppError(404, 'NOT_FOUND', `Unknown VIN ${input.vin}`);
+    if (!dealership) throw new AppError(404, 'NOT_FOUND', `Unknown dealership ${input.dealershipId}`);
+
+    const start = new Date(input.startAt);
+    const end = new Date(input.endAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return invalid('start_at/end_at is not a valid instant');
+    }
+    if (minutesBetween(start, end) !== serviceType.durationMin) {
+      return invalid(`slot length must equal the service duration (${serviceType.durationMin} min)`);
+    }
+    if (start.getTime() <= now.getTime()) {
+      return invalid('start_at is in the past');
+    }
+
+    const bays = await this.deps.bays.listByDealership(input.dealershipId);
+    const bay = bays.find((b) => b.id === input.bayId && b.active);
+    if (!bay) return invalid('bay is not an active bay at this dealership');
+    const requiredBayTypes = serviceType.bayTypes
+      .filter((b) => b.kind === 'required')
+      .map((b) => b.bayTypeCode);
+    if (requiredBayTypes.length > 0 && !requiredBayTypes.includes(bay.bayTypeCode)) {
+      return invalid(`service requires bay type ${requiredBayTypes.join('|')}`);
+    }
+
+    const technicians = await this.deps.technicians.listQualified(
+      input.dealershipId,
+      serviceType.requiredSkills,
+    );
+    const technician = technicians.find((t) => t.id === input.technicianId);
+    if (!technician) return invalid('technician is not qualified or not at this dealership');
+
+    if (!withinOpenHours(dealership, start, end)) return invalid('slot is outside dealership hours');
+    if (!withinShift(technician, start, end)) return invalid('slot is outside the technician shift');
+
+    const customer = await this.deps.customers.upsert(input.customer);
+
+    const result = await this.deps.appointments.createWithReserve({
+      dealershipId: input.dealershipId,
+      serviceTypeId: serviceType.id,
+      vehicleId: vehicle.id,
+      customerId: customer.id,
+      bayId: bay.id,
+      technicianId: technician.id,
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      idempotencyKey: input.idempotencyKey,
+      holdMinutes: this.deps.holdMinutes ?? DEFAULT_HOLD_MINUTES,
+    });
+
+    if (result.outcome === 'created') {
+      appointmentOutcomes.inc({ outcome: 'created' });
+      return { outcome: 'created', appointment: result.appointment };
+    }
+    if (result.outcome === 'duplicate') {
+      appointmentOutcomes.inc({ outcome: 'duplicate' });
+      return { outcome: 'duplicate', appointment: result.appointment };
+    }
+
+    appointmentOutcomes.inc({ outcome: 'conflict' });
+    appointmentConflicts.inc();
+    const nextAvailable = await this.searchSlots({
+      dealershipId: input.dealershipId,
+      serviceTypeCode: input.serviceTypeCode,
+      vin: input.vin,
+      desiredAt: input.startAt,
+    }).catch(() => []);
+    return { outcome: 'conflict', nextAvailable };
+  }
+
+  private now(): Date {
+    return (this.deps.clock ?? (() => new Date()))();
+  }
+}
+
+function invalid(reason: string): CreateAppointmentResult {
+  appointmentOutcomes.inc({ outcome: 'invalid_slot' });
+  return { outcome: 'invalid_slot', reason };
+}
+
+function withinOpenHours(dealership: Dealership, start: Date, end: Date): boolean {
+  const tz = dealership.timezone;
+  if (!sameLocalDay(start, end, tz)) return false;
+  const hours = dealership.hours.find((h) => h.weekday === localWeekday(start, tz));
+  if (!hours) return false;
+  const s = localMinuteOfDay(start, tz);
+  const e = localMinuteOfDay(end, tz);
+  return s >= hhMmToMinutes(hours.open) && e <= hhMmToMinutes(hours.close) && e > s;
+}
+
+function withinShift(technician: Technician, start: Date, end: Date): boolean {
+  const tz = 'UTC';
+  if (!sameLocalDay(start, end, tz)) return false;
+  const shift = technician.shifts.find((s) => s.weekday === localWeekday(start, tz));
+  if (!shift) return false;
+  const s = localMinuteOfDay(start, tz);
+  const e = localMinuteOfDay(end, tz);
+  return s >= hhMmToMinutes(shift.start) && e <= hhMmToMinutes(shift.end) && e > s;
 }

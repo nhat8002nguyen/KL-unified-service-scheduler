@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, parseOrThrow } from '../common/http';
+import { AppError } from '../common/errors';
+import { asyncHandler, headerValue, parseOrThrow } from '../common/http';
 import { logger } from '../telemetry/logger';
 import { slotSearchDuration } from '../telemetry/metrics';
 import type { BookingService } from './booking.types';
@@ -14,10 +15,26 @@ const SlotQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });
 
-/** Advisory slot search: `GET /slots`. */
+const CreateAppointmentSchema = z.object({
+  dealership_id: z.string().min(1),
+  service_type_code: z.string().min(1),
+  vin: z.string().min(1),
+  customer: z.object({
+    name: z.string().min(1),
+    phone: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+  }),
+  bay_id: z.string().min(1),
+  technician_id: z.string().min(1),
+  start_at: z.string().min(1),
+  end_at: z.string().min(1),
+  idempotency_key: z.string().min(1).optional(),
+});
+
 export function bookingRouter(service: BookingService): Router {
   const router = Router();
 
+  /** Advisory slot search. */
   router.get(
     '/slots',
     asyncHandler(async (req, res) => {
@@ -43,6 +60,47 @@ export function bookingRouter(service: BookingService): Router {
         'slot search',
       );
       res.json({ slots });
+    }),
+  );
+
+  /** Authoritative booking: transactional check-and-reserve. */
+  router.post(
+    '/appointments',
+    asyncHandler(async (req, res) => {
+      const body = parseOrThrow(CreateAppointmentSchema, req.body, 'body');
+      const idempotencyKey = body.idempotency_key ?? headerValue(req, 'idempotency-key');
+      if (!idempotencyKey) {
+        throw new AppError(422, 'VALIDATION_FAILED', 'idempotency_key is required');
+      }
+
+      const result = await service.createAppointment({
+        dealershipId: body.dealership_id,
+        serviceTypeCode: body.service_type_code,
+        vin: body.vin,
+        customer: body.customer,
+        bayId: body.bay_id,
+        technicianId: body.technician_id,
+        startAt: body.start_at,
+        endAt: body.end_at,
+        idempotencyKey,
+      });
+
+      switch (result.outcome) {
+        case 'created':
+        case 'duplicate':
+          res.status(201).json({ appointment: result.appointment });
+          return;
+        case 'conflict':
+          logger.info(
+            { dealership_id: body.dealership_id, outcome: 'slot_taken' },
+            'booking conflict',
+          );
+          res.status(409).json({ error: 'slot_taken', next_available: result.nextAvailable });
+          return;
+        case 'invalid_slot':
+          res.status(422).json({ error: 'INVALID_SLOT', message: result.reason });
+          return;
+      }
     }),
   );
 

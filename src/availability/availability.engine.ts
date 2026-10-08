@@ -1,4 +1,5 @@
 import { parseInstant } from '../common/time';
+import { localDateOf, zoneOffsetMinutes, zonedWallClockUtc } from '../common/tz';
 import { intersect, interval, minutes, subtractAll, union, type Interval } from './interval';
 import type {
   AvailabilityContext,
@@ -48,7 +49,7 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
   const busyByTech = groupBusy(ctx.busy, 'technicianId');
 
   const slots: Slot[] = [];
-  const startDay = localDate(now, tz);
+  const startDay = localDateOf(now, tz);
 
   for (let dayOffset = 0; dayOffset <= input.horizonDays; dayOffset += 1) {
     const cal = new Date(Date.UTC(startDay.year, startDay.month - 1, startDay.day + dayOffset));
@@ -60,12 +61,7 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
     const opening = union(
       ctx.dealership.hours
         .filter((h) => h.weekday === weekday)
-        .map((h) =>
-          interval(
-            zonedWallClock(y, mo, da, h.open, tz),
-            zonedWallClock(y, mo, da, h.close, tz),
-          ),
-        ),
+        .map((h) => interval(zonedWallClockUtc(y, mo, da, h.open, tz), zonedWallClockUtc(y, mo, da, h.close, tz))),
     );
     if (opening.length === 0) continue;
 
@@ -77,12 +73,7 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
         const shift = union(
           tech.shifts
             .filter((s) => s.weekday === weekday)
-            .map((s) =>
-              interval(
-                zonedWallClock(y, mo, da, s.start, tz),
-                zonedWallClock(y, mo, da, s.end, tz),
-              ),
-            ),
+            .map((s) => interval(zonedWallClockUtc(y, mo, da, s.start, tz), zonedWallClockUtc(y, mo, da, s.end, tz))),
         );
         if (shift.length === 0) continue;
 
@@ -121,10 +112,7 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
 
 function extendBuffer(busy: BusyInterval[], bufferMin: number): Interval[] {
   return busy.map((b) =>
-    interval(
-      parseInstant(b.startAt),
-      new Date(parseInstant(b.endAt).getTime() + bufferMin * 60_000),
-    ),
+    interval(parseInstant(b.startAt), new Date(parseInstant(b.endAt).getTime() + bufferMin * 60_000)),
   );
 }
 
@@ -138,57 +126,7 @@ function groupBusy(busy: BusyInterval[], key: 'bayId' | 'technicianId'): Map<str
   return map;
 }
 
-interface WallClock {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-}
-
-function wallParts(at: Date, timeZone: string): WallClock {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  const parts: Record<string, string> = {};
-  for (const p of fmt.formatToParts(at)) {
-    if (p.type !== 'literal') parts[p.type] = p.value;
-  }
-  return {
-    year: Number(parts['year']),
-    month: Number(parts['month']),
-    day: Number(parts['day']),
-    hour: Number(parts['hour']),
-    minute: Number(parts['minute']),
-  };
-}
-
-function localDate(at: Date, timeZone: string): { year: number; month: number; day: number } {
-  const w = wallParts(at, timeZone);
-  return { year: w.year, month: w.month, day: w.day };
-}
-
-/** Offset (minutes) of a zone from UTC at a given instant. */
-function zoneOffsetMinutes(timeZone: string, at: Date): number {
-  const w = wallParts(at, timeZone);
-  const asUtc = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute);
-  const instantMinute = Math.floor(at.getTime() / 60_000) * 60_000;
-  return (asUtc - instantMinute) / 60_000;
-}
-
-/** Convert a dealership-local wall clock to a UTC instant (DST-safe, 2 passes). */
-function zonedWallClock(year: number, month: number, day: number, hhmm: string, timeZone: string): Date {
-  const [hStr = '0', mStr = '0'] = hhmm.split(':');
-  const guess = Date.UTC(year, month - 1, day, Number(hStr), Number(mStr));
-  let utc = guess - zoneOffsetMinutes(timeZone, new Date(guess)) * 60_000;
-  utc = guess - zoneOffsetMinutes(timeZone, new Date(utc)) * 60_000;
-  return new Date(utc);
-}
-
 export const availabilityEngine: AvailabilityEngine = { findSlots };
+
+// re-exported so consumers do not need to know the tz module
+export { zoneOffsetMinutes };
