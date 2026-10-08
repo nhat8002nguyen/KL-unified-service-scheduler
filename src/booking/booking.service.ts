@@ -42,8 +42,10 @@ const DEFAULT_LIMIT = 10;
 const DEFAULT_HOLD_MINUTES = 10;
 
 export class BookingServiceImpl implements BookingService {
+  /** constructor stores the injected booking dependencies. */
   constructor(private readonly deps: BookingDeps) {}
 
+  /** searchSlots finds bookable slots for the requested service, vehicle, and dealership within the search horizon. */
   async searchSlots(query: SearchSlotsQuery): Promise<Slot[]> {
     const now = this.now();
     const desired = new Date(query.desiredAt);
@@ -88,6 +90,10 @@ export class BookingServiceImpl implements BookingService {
     );
   }
 
+  /**
+   * createAppointment validates the request against the catalog, bays, technicians, and opening hours before atomically reserving a hold.
+   * Returns the created or duplicate appointment, a conflict with the next available slots, or an invalid-slot reason.
+   */
   async createAppointment(input: CreateAppointmentInput): Promise<CreateAppointmentResult> {
     const now = this.now();
 
@@ -169,6 +175,7 @@ export class BookingServiceImpl implements BookingService {
     return { outcome: 'conflict', nextAvailable };
   }
 
+  /** confirm transitions a held appointment to the confirmed state. */
   async confirm(appointmentId: string): Promise<Appointment> {
     const appointment = await this.deps.appointments.updateStatus(appointmentId, ['HELD'], 'CONFIRMED');
     if (!appointment) {
@@ -177,6 +184,7 @@ export class BookingServiceImpl implements BookingService {
     return appointment;
   }
 
+  /** cancel transitions a held or confirmed appointment to the cancelled state. */
   async cancel(appointmentId: string): Promise<Appointment> {
     const appointment = await this.deps.appointments.updateStatus(
       appointmentId,
@@ -190,25 +198,30 @@ export class BookingServiceImpl implements BookingService {
     return appointment;
   }
 
+  /** getAppointment returns the appointment for the given id, or null when none exists. */
   async getAppointment(id: string): Promise<Appointment | null> {
     return this.deps.appointments.getById(id);
   }
 
+  /** releaseExpiredHolds releases holds whose TTL has elapsed and returns how many were freed. */
   async releaseExpiredHolds(): Promise<number> {
     const released = await this.deps.appointments.releaseExpiredHolds(this.now().toISOString());
     return released.length;
   }
 
+  /** now returns the current instant from the injected clock, falling back to the wall clock. */
   private now(): Date {
     return (this.deps.clock ?? (() => new Date()))();
   }
 }
 
+/** invalid records the invalid-slot metric and builds an invalid-slot result. */
 function invalid(reason: string): CreateAppointmentResult {
   appointmentOutcomes.inc({ outcome: 'invalid_slot' });
   return { outcome: 'invalid_slot', reason };
 }
 
+/** withinOpenHours reports whether a slot sits inside the dealership's local opening hours. */
 function withinOpenHours(dealership: Dealership, start: Date, end: Date): boolean {
   const tz = dealership.timezone;
   if (!sameLocalDay(start, end, tz)) return false;
@@ -219,6 +232,7 @@ function withinOpenHours(dealership: Dealership, start: Date, end: Date): boolea
   return s >= hhMmToMinutes(hours.open) && e <= hhMmToMinutes(hours.close) && e > s;
 }
 
+/** withinShift reports whether a slot sits inside the technician's shift for the local weekday. */
 function withinShift(technician: Technician, tz: string, start: Date, end: Date): boolean {
   if (!sameLocalDay(start, end, tz)) return false;
   const shift = technician.shifts.find((s) => s.weekday === localWeekday(start, tz));

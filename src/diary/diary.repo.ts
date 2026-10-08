@@ -4,8 +4,10 @@ import type { CapacityAppointment, DiaryRepository, TechnicianCalendarEntry } fr
 
 /** Read-only views over the diary; the only writer is the booking service. */
 export class PgDiaryRepo implements DiaryRepository {
+  /** constructor stores the database handle used for diary reads. */
   constructor(private readonly db: Db) {}
 
+  /** technicianAppointments lists a technician's non-cancelled appointments overlapping the window. */
   async technicianAppointments(
     technicianId: string,
     from: string,
@@ -46,6 +48,7 @@ export class PgDiaryRepo implements DiaryRepository {
     }));
   }
 
+  /** capacityAppointments lists a dealership's non-cancelled appointments overlapping the window. */
   async capacityAppointments(
     dealershipId: string,
     from: string,

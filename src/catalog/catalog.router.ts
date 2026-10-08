@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../common/http';
 import type { CatalogRepository } from './catalog.types';
 
-/** `GET /service-types` — reference data for the booking UI. */
+/** catalogRouter builds the router serving service-type reference data. */
 export function catalogRouter(repo: CatalogRepository): Router {
   const router = Router();
 

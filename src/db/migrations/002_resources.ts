@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 
+/** up creates the resource tables: dealerships, hours, bays, technicians, shifts, vehicles, and customers. */
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('dealership', (t) => {
     t.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
@@ -67,6 +68,7 @@ export async function up(knex: Knex): Promise<void> {
   });
 }
 
+/** down drops the resource tables in reverse dependency order. */
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('customer');
   await knex.schema.dropTableIfExists('vehicle');

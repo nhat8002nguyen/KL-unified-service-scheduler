@@ -1,7 +1,7 @@
 import knex from 'knex';
 import { knexConfig } from './knexconfig';
 
-/** Minimal migration CLI: `tsx src/db/cli.ts migrate|rollback`. */
+/** main is the migration CLI: `tsx src/db/cli.ts migrate|rollback`. */
 async function main(): Promise<void> {
   const [command] = process.argv.slice(2);
   const db = knex(knexConfig());

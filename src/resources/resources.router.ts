@@ -15,7 +15,7 @@ export interface ResourcesDeps {
   technicians: TechnicianReader;
 }
 
-/** Read endpoints over reference data. */
+/** resourcesRouter builds the router serving reference-data read endpoints. */
 export function resourcesRouter(deps: ResourcesDeps): Router {
   const router = Router();
 

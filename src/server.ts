@@ -13,9 +13,10 @@ import { logger } from './telemetry/logger';
 import { initTracing, shutdownTracing } from './telemetry/tracer';
 
 /**
- * Composition root: the only place that picks concrete adapters and wires them
- * into the modules. Every module talks to an interface, so each adapter can be
- * swapped for an HTTP client when the module is extracted into a service.
+ * main is the composition root: the only place that picks concrete adapters and
+ * wires them into the modules. Every module talks to an interface, so each
+ * adapter can be swapped for an HTTP client when the module is extracted into a
+ * service.
  */
 async function main(): Promise<void> {
   const config = loadConfig();

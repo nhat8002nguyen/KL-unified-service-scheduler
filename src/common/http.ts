@@ -6,14 +6,14 @@ import { AppError } from './errors';
 
 type Handler = (req: Request, res: Response, next: NextFunction) => Promise<unknown>;
 
-/** Wrap an async handler so a rejected promise reaches the error middleware. */
+/** asyncHandler wraps an async handler so a rejected promise reaches the error middleware. */
 export function asyncHandler(fn: Handler): RequestHandler {
   return (req, res, next) => {
     void fn(req, res, next).catch(next);
   };
 }
 
-/** Validate untrusted input, raising a 422 with the issues on failure. */
+/** parseOrThrow validates untrusted input, raising a 422 with the issues on failure. */
 export function parseOrThrow<T>(schema: ZodType<T>, data: unknown, what: string): T {
   const parsed = schema.safeParse(data);
   if (!parsed.success) {
@@ -33,7 +33,7 @@ export interface RequestLog {
   error(obj: Record<string, unknown>, msg?: string): void;
 }
 
-/** Attach a per-request logger carrying the trace id, and log completion. */
+/** requestContext attaches a per-request logger carrying the trace id, and logs completion on finish. */
 export function requestContext(): RequestHandler {
   return (req, res, next) => {
     const traceId = currentTraceId() ?? headerString(req.headers['x-request-id']);
@@ -59,17 +59,18 @@ export function requestContext(): RequestHandler {
   };
 }
 
+/** headerString collapses a possibly repeated header value to a single string. */
 function headerString(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
   return value;
 }
 
-/** Read a request header as a single string. */
+/** headerValue reads a request header as a single string. */
 export function headerValue(req: Request, name: string): string | undefined {
   return headerString(req.headers[name]);
 }
 
-/** Read a required path parameter as a string under Express 5's looser param types. */
+/** pathParam reads a required path parameter as a string under Express 5's looser param types. */
 export function pathParam(req: Request, name: string): string {
   const value: unknown = (req.params as Record<string, unknown>)[name];
   if (typeof value === 'string') return value;

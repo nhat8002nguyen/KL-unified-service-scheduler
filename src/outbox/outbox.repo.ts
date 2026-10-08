@@ -8,6 +8,7 @@ import type { DomainEvent, OutboxWriter } from './outbox.types';
  * MVP (a future publisher drains unpublished rows).
  */
 export class PgOutboxWriter implements OutboxWriter {
+  /** append inserts the domain event into the outbox table within the caller's transaction. */
   async append(tx: DbTx, event: DomainEvent): Promise<void> {
     await tx.query(
       'insert into outbox (aggregate_id, event_type, payload) values ($1, $2, $3)',
@@ -19,6 +20,7 @@ export class PgOutboxWriter implements OutboxWriter {
 
 /** No-op writer for tests that do not care about events. */
 export class NoopOutboxWriter implements OutboxWriter {
+  /** append is a no-op used by tests that do not care about events. */
   async append(): Promise<void> {
     /* no-op */
   }

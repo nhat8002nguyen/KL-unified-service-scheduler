@@ -2,11 +2,7 @@ import type { Knex } from 'knex';
 
 const PARTITIONS = 4;
 
-/**
- * The diary — the one hot table. Hash-partitioned by `dealership_id`; the
- * EXCLUDE constraints are declared on the partitioned parent (legal on
- * PostgreSQL 17+ because every partition-key column is included with `=`).
- */
+/** up creates the hash-partitioned appointment diary, its partial exclusion constraints, and the outbox. */
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     create table appointment (
@@ -69,6 +65,7 @@ export async function up(knex: Knex): Promise<void> {
   `);
 }
 
+/** down drops the outbox and appointment tables. */
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('outbox');
   await knex.schema.dropTableIfExists('appointment');

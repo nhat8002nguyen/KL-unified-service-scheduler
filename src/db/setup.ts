@@ -1,7 +1,7 @@
 import knex from 'knex';
 import { knexConfig } from './knexconfig';
 
-/** Apply all migrations, then run the seed. Used by the container entrypoint. */
+/** main applies all migrations, then runs the seed. Used by the container entrypoint. */
 async function main(): Promise<void> {
   const db = knex(knexConfig());
   try {

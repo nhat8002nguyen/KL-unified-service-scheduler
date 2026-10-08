@@ -17,8 +17,9 @@ export interface Config {
 }
 
 /**
- * Parse and validate process configuration. Throws on a missing/invalid value
- * so a misconfigured process fails fast at boot instead of mid-request.
+ * loadConfig parses and validates process configuration. Throws on a
+ * missing/invalid value so a misconfigured process fails fast at boot instead
+ * of mid-request.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = ConfigSchema.safeParse(env);

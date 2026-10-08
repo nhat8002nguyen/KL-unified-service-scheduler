@@ -1,9 +1,9 @@
 import type { Knex } from 'knex';
 
 /**
- * Knex configuration. Kept under `src/` so it is inside the TS program's
- * rootDir (server code imports it); the app never uses the knex CLI, so no
- * repo-root knexfile is needed.
+ * knexConfig builds the Knex configuration from the database URL. It is kept
+ * under `src/` so it stays inside the TS program's rootDir (server code imports
+ * it); the app never uses the knex CLI, so no repo-root knexfile is needed.
  */
 export function knexConfig(databaseUrl = process.env['DATABASE_URL']): Knex.Config {
   if (!databaseUrl) throw new Error('DATABASE_URL is required');

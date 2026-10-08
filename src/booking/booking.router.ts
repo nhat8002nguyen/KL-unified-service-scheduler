@@ -31,6 +31,7 @@ const CreateAppointmentSchema = z.object({
   idempotency_key: z.string().min(1).optional(),
 });
 
+/** bookingRouter builds the Express router exposing slot search and the appointment lifecycle endpoints. */
 export function bookingRouter(service: BookingService): Router {
   const router = Router();
 

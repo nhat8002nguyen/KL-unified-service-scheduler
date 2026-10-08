@@ -31,8 +31,10 @@ interface TechnicianRow {
 export class PgResourcesRepo
   implements VehicleReader, DealershipReader, BayReader, TechnicianReader
 {
+  /** constructor stores the database pool for reference-data reads. */
   constructor(private readonly db: Db) {}
 
+  /** getByVin looks up a vehicle by VIN, or null if unknown. */
   async getByVin(vin: string): Promise<Vehicle | null> {
     const { rows } = await this.db.query<Vehicle>(
       'select id, vin, make, model, year from vehicle where vin = $1',
@@ -41,6 +43,7 @@ export class PgResourcesRepo
     return rows[0] ?? null;
   }
 
+  /** getById loads a dealership with its opening hours, or null if absent. */
   async getById(id: string): Promise<Dealership | null> {
     const { rows } = await this.db.query<{ id: string; name: string; timezone: string }>(
       'select id, name, timezone from dealership where id = $1',
@@ -66,6 +69,7 @@ export class PgResourcesRepo
     };
   }
 
+  /** listByDealership returns the service bays for a dealership ordered by name. */
   async listByDealership(dealershipId: string): Promise<ServiceBay[]> {
     const { rows } = await this.db.query<{
       id: string;
@@ -90,6 +94,7 @@ export class PgResourcesRepo
     }));
   }
 
+  /** listQualified returns active technicians whose skills cover every required skill, with shifts. */
   async listQualified(
     dealershipId: string,
     required: readonly RequiredSkill[],
@@ -150,6 +155,7 @@ export class PgResourcesRepo
   }
 }
 
+/** covers reports whether the technician's skills satisfy all required skills. */
 function covers(skills: TechnicianSkill[], required: readonly RequiredSkill[]): boolean {
   return required.every((req) =>
     skills.some((s) => s.skillCode === req.skillCode && s.proficiency >= req.minProficiency),

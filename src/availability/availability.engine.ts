@@ -13,7 +13,7 @@ import type {
 const PREFERRED_BAY_PENALTY = 60;
 
 /**
- * Continuous-slot search. For each compatible (bay, technician) pair, intersect
+ * findSlots searches for continuous slots. For each compatible (bay, technician) pair, intersect
  * the bay's open time with the technician's open time, subtract their busy
  * windows (each extended by the service buffer at the end), and emit one
  * duration-long candidate per free block. Output is advisory.
@@ -111,12 +111,14 @@ export function findSlots(input: SlotSearchInput, ctx: AvailabilityContext): Slo
   return slots.slice(0, input.limit);
 }
 
+/** extendBuffer pushes each busy interval's end forward by the service buffer. */
 function extendBuffer(busy: BusyInterval[], bufferMin: number): Interval[] {
   return busy.map((b) =>
     interval(parseInstant(b.startAt), new Date(parseInstant(b.endAt).getTime() + bufferMin * 60_000)),
   );
 }
 
+/** groupBusy buckets busy intervals by bay or technician id. */
 function groupBusy(busy: BusyInterval[], key: 'bayId' | 'technicianId'): Map<string, BusyInterval[]> {
   const map = new Map<string, BusyInterval[]>();
   for (const b of busy) {

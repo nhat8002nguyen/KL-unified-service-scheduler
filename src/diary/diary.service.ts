@@ -18,8 +18,10 @@ export interface DiaryDeps {
 }
 
 export class DiaryServiceImpl implements DiaryService {
+  /** constructor stores the injected diary and resource readers. */
   constructor(private readonly deps: DiaryDeps) {}
 
+  /** technicianCalendar returns a technician's appointments in the window, sorted by start time. */
   async technicianCalendar(
     technicianId: string,
     from: string,
@@ -31,6 +33,7 @@ export class DiaryServiceImpl implements DiaryService {
       .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
   }
 
+  /** dealershipCapacity summarizes bay and technician utilization over the reporting window. */
   async dealershipCapacity(
     dealershipId: string,
     from: string,
@@ -73,6 +76,7 @@ export class DiaryServiceImpl implements DiaryService {
   }
 }
 
+/** busyIntervals maps the appointments matching the predicate into busy intervals for the API. */
 function busyIntervals(
   appointments: CapacityAppointment[],
   match: (a: CapacityAppointment) => boolean,
@@ -87,18 +91,20 @@ function busyIntervals(
     }));
 }
 
+/** overlapMinutes measures the minutes of an appointment that fall inside the reporting window. */
 function overlapMinutes(a: CapacityAppointment, fromMs: number, toMs: number): number {
   const start = Math.max(Date.parse(a.startAt), fromMs);
   const end = Math.min(Date.parse(a.endAt), toMs);
   return end > start ? (end - start) / 60_000 : 0;
 }
 
+/** utilization returns busy time as a percentage of open time, rounded to one decimal. */
 function utilization(busyMinutes: number, openMinutes: number): number {
   if (openMinutes <= 0) return 0;
   return Math.round((busyMinutes / openMinutes) * 1000) / 10;
 }
 
-/** Dealership opening minutes that fall inside the reporting window. */
+/** openMinutesInWindow totals the dealership's open minutes that fall inside the reporting window. */
 function openMinutesInWindow(dealership: Dealership, fromMs: number, toMs: number): number {
   const tz = dealership.timezone;
   const startDay = localDateOf(new Date(fromMs), tz);

@@ -8,7 +8,7 @@ const WindowSchema = z.object({
   to: z.string().min(1),
 });
 
-/** Service-manager and technician views over the diary. */
+/** diaryRouter exposes service-manager and technician views over the diary. */
 export function diaryRouter(service: DiaryService): Router {
   const router = Router();
 

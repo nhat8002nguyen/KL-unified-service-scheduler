@@ -14,7 +14,7 @@ export interface LogContext {
   appointment_id?: string;
 }
 
-/** A child logger bound to a request/event context. */
+/** childLogger returns a logger bound to a request/event context. */
 export function childLogger(ctx: LogContext): Logger {
   return logger.child(ctx);
 }

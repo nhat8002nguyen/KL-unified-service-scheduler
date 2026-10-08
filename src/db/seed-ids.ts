@@ -1,4 +1,4 @@
-/** Stable ids for the demo seed, shared by seeds and integration tests. */
+/** id builds a stable UUID string for the demo seed from a small integer. */
 const id = (n: number): string => `00000000-0000-0000-0000-00000000${String(n).padStart(4, '0')}`;
 
 export const SEED = {

@@ -28,6 +28,7 @@ interface AppointmentRow {
   updated_at: Date;
 }
 
+/** mapAppointment converts a raw appointment row into its domain shape. */
 function mapAppointment(row: AppointmentRow): Appointment {
   return {
     id: row.id,
@@ -54,11 +55,13 @@ interface PgError {
 const EXCLUSION_VIOLATION = '23P01';
 
 export class PgAppointmentRepo implements AppointmentRepository {
+  /** constructor stores the database pool and outbox writer. */
   constructor(
     private readonly db: Db,
     private readonly outbox: OutboxWriter,
   ) {}
 
+  /** busyIntervals returns the bay and technician windows held or confirmed for a dealership within a range. */
   async busyIntervals(dealershipId: string, from: string, to: string): Promise<BusyInterval[]> {
     const { rows } = await this.db.query<{
       service_bay_id: string;
@@ -81,6 +84,7 @@ export class PgAppointmentRepo implements AppointmentRepository {
     }));
   }
 
+  /** getById loads a single appointment by id, or null when none exists. */
   async getById(id: string): Promise<Appointment | null> {
     const { rows } = await this.db.query<AppointmentRow>(
       'select * from appointment where id = $1 limit 1',
@@ -90,6 +94,9 @@ export class PgAppointmentRepo implements AppointmentRepository {
     return row ? mapAppointment(row) : null;
   }
 
+  /** createWithReserve atomically reserves a bay and technician and creates the appointment.
+   * It first honors idempotency, then locks both resources and re-checks availability to stay conflict-free.
+   * Returns the created appointment, an existing duplicate, or a conflict outcome. */
   async createWithReserve(input: ReserveInput): Promise<ReserveResult> {
     const client = await this.db.connect();
     try {
@@ -196,6 +203,7 @@ export class PgAppointmentRepo implements AppointmentRepository {
     }
   }
 
+  /** updateStatus transitions an appointment when its current status is among the allowed `from` values. */
   async updateStatus(
     id: string,
     from: AppointmentStatus[],
@@ -235,6 +243,7 @@ export class PgAppointmentRepo implements AppointmentRepository {
     }
   }
 
+  /** releaseExpiredHolds cancels held appointments whose hold window has lapsed and returns their ids. */
   async releaseExpiredHolds(now: string): Promise<string[]> {
     const client = await this.db.connect();
     try {
@@ -265,6 +274,7 @@ export class PgAppointmentRepo implements AppointmentRepository {
   }
 }
 
+/** statusEvent maps an appointment status to its corresponding outbox event type. */
 function statusEvent(status: AppointmentStatus): 'AppointmentConfirmed' | 'AppointmentCancelled' | 'AppointmentCompleted' | 'AppointmentNoShow' | 'AppointmentHeld' {
   switch (status) {
     case 'CONFIRMED':
@@ -281,8 +291,10 @@ function statusEvent(status: AppointmentStatus): 'AppointmentConfirmed' | 'Appoi
 }
 
 export class PgCustomerRepo implements CustomerWriter {
+  /** constructor stores the database pool used to read and write customers. */
   constructor(private readonly db: Db) {}
 
+  /** upsert returns the customer matching the input email, or inserts a new customer and returns its id. */
   async upsert(input: CustomerInput): Promise<{ id: string }> {
     if (input.email) {
       const existing = await this.db.query<{ id: string }>(

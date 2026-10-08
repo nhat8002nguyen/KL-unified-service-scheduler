@@ -16,6 +16,7 @@ export class AppError extends Error {
   readonly code: ErrorCode;
   readonly details?: unknown;
 
+  /** constructor stores the HTTP status, the stable error code, and any details. */
   constructor(status: number, code: ErrorCode, message: string, details?: unknown) {
     super(message);
     this.name = 'AppError';
@@ -25,11 +26,13 @@ export class AppError extends Error {
   }
 }
 
+/** notFoundHandler replies 404 for any request that matched no route. */
 export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(404).json({ error: 'NOT_FOUND', message: `No route for ${req.method} ${req.path}` });
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
+/** errorHandler renders a thrown AppError as JSON with its status and code, and anything else as a generic 500. */
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
     const body: Record<string, unknown> = { error: err.code, message: err.message };

@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 
+/** up creates the catalog tables: skills, bay types, service types, and their rules. */
 export async function up(knex: Knex): Promise<void> {
   await knex.raw('create extension if not exists pgcrypto');
   await knex.raw('create extension if not exists btree_gist');
@@ -42,6 +43,7 @@ export async function up(knex: Knex): Promise<void> {
   );
 }
 
+/** down drops the catalog tables in reverse dependency order. */
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('service_type_bay_type');
   await knex.schema.dropTableIfExists('service_type_required_skill');

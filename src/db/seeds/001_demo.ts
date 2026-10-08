@@ -3,6 +3,7 @@ import { SEED, SEED_TIMEZONE, SEED_VIN } from '../seed-ids';
 
 const WEEKDAYS_MON_FRI = [1, 2, 3, 4, 5];
 
+/** seed inserts the demo dealership's reference data once, skipping an already-seeded database. */
 export async function seed(knex: Knex): Promise<void> {
   // Never wipe an already-seeded database: the container runs this on every boot.
   const existing = await knex('dealership').count<{ count: string }[]>({ count: '*' });

@@ -41,6 +41,7 @@ export const slotSearchDuration = new client.Histogram({
   registers: [registry],
 });
 
+/** routeLabel derives the metric route label from the matched Express route, or 'unmatched'. */
 function routeLabel(req: Request): string {
   const route = (req as unknown as { route?: { path?: unknown } }).route;
   const path = route?.path;
@@ -49,6 +50,7 @@ function routeLabel(req: Request): string {
   return 'unmatched';
 }
 
+/** httpMetricsMiddleware records request duration and count per route, skipping the /metrics endpoint. */
 export function httpMetricsMiddleware(): RequestHandler {
   return (req, res, next) => {
     if (req.path === '/metrics') {
@@ -69,6 +71,7 @@ export function httpMetricsMiddleware(): RequestHandler {
   };
 }
 
+/** metricsHandler serves the Prometheus registry as the /metrics response body. */
 export function metricsHandler(): RequestHandler {
   return (_req, res) => {
     res.setHeader('Content-Type', registry.contentType);

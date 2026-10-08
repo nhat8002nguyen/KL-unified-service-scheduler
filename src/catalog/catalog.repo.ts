@@ -10,8 +10,10 @@ interface ServiceTypeRow {
 }
 
 export class PgCatalogRepo implements CatalogRepository {
+  /** constructor stores the database pool for catalog queries. */
   constructor(private readonly db: Db) {}
 
+  /** getServiceTypeDetail loads a service type by code, or null if absent. */
   async getServiceTypeDetail(code: string): Promise<ServiceTypeDetail | null> {
     const { rows } = await this.db.query<ServiceTypeRow>(
       'select id, code, name, duration_min, buffer_min from service_type where code = $1',
@@ -21,6 +23,7 @@ export class PgCatalogRepo implements CatalogRepository {
     return row ? this.hydrate(row) : null;
   }
 
+  /** listServiceTypes returns all service types ordered by code. */
   async listServiceTypes(): Promise<ServiceTypeDetail[]> {
     const { rows } = await this.db.query<ServiceTypeRow>(
       'select id, code, name, duration_min, buffer_min from service_type order by code',
@@ -28,6 +31,7 @@ export class PgCatalogRepo implements CatalogRepository {
     return Promise.all(rows.map((row) => this.hydrate(row)));
   }
 
+  /** hydrate expands a service-type row with its required skills and bay types. */
   private async hydrate(row: ServiceTypeRow): Promise<ServiceTypeDetail> {
     const [skills, bays] = await Promise.all([
       this.db.query<{ skill_code: string; min_proficiency: number }>(

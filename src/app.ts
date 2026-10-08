@@ -23,10 +23,12 @@ export interface AppDeps {
   diary?: DiaryService;
 }
 
+/** notImplemented returns 501 for a route whose backing dependency was not wired. */
 const notImplemented: RequestHandler = (req, res) => {
   res.status(501).json({ error: 'NOT_IMPLEMENTED', message: `${req.method} ${req.path} not wired` });
 };
 
+/** buildApp assembles the Express app from injected dependencies, stubbing any dependency left undefined. */
 export function buildApp(deps: AppDeps = {}): Express {
   const app = express();
   app.disable('x-powered-by');
