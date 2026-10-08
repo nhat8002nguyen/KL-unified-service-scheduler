@@ -1,4 +1,6 @@
 import express, { type Express, type RequestHandler } from 'express';
+import { bookingRouter } from './booking/booking.router';
+import type { BookingService } from './booking/booking.types';
 import { catalogRouter } from './catalog/catalog.router';
 import type { CatalogRepository } from './catalog/catalog.types';
 import { errorHandler, notFoundHandler } from './common/errors';
@@ -15,6 +17,7 @@ export interface AppDeps {
   dbHealthy?: () => Promise<boolean>;
   catalog?: CatalogRepository;
   resources?: ResourcesDeps;
+  booking?: BookingService;
 }
 
 const notImplemented: RequestHandler = (req, res) => {
@@ -55,6 +58,12 @@ export function buildApp(deps: AppDeps = {}): Express {
   } else {
     app.get('/dealerships/:id', notImplemented);
     app.get('/vehicles/:vin', notImplemented);
+  }
+
+  if (deps.booking) {
+    app.use(bookingRouter(deps.booking));
+  } else {
+    app.get('/slots', notImplemented);
   }
 
   app.use(notFoundHandler);
