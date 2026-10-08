@@ -1,0 +1,58 @@
+# Unified Service Scheduler — local stack.
+# `docker compose up --build` starts PostgreSQL 17 + the API (migrates + seeds on boot).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: keyloop
+      POSTGRES_PASSWORD: keyloop
+      POSTGRES_DB: keyloop
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keyloop -d keyloop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://keyloop:keyloop@db:5432/keyloop
+      LOG_LEVEL: info
+      HOLD_MINUTES: "10"
+      # Point at an OTLP collector to export traces; empty = ids only.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pgdata:
+
+# Optional observability add-ons — uncomment to scrape metrics / collect traces.
+#
+#  prometheus:
+#    image: prom/prometheus:latest
+#    volumes:
+#      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+#    ports:
+#      - "9090:9090"
+#
+#  otel-collector:
+#    image: otel/opentelemetry-collector-contrib:latest
+#    command: ["--config=/etc/otelcol/config.yaml"]
+#    volumes:
+#      - ./ops/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+#    ports:
+#      - "4318:4318"
