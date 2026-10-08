@@ -14,6 +14,7 @@ import type {
 } from '../resources/resources.types';
 import { appointmentConflicts, appointmentOutcomes } from '../telemetry/metrics';
 import type {
+  Appointment,
   AppointmentRepository,
   BookingService,
   CreateAppointmentInput,
@@ -164,6 +165,36 @@ export class BookingServiceImpl implements BookingService {
       desiredAt: input.startAt,
     }).catch(() => []);
     return { outcome: 'conflict', nextAvailable };
+  }
+
+  async confirm(appointmentId: string): Promise<Appointment> {
+    const appointment = await this.deps.appointments.updateStatus(appointmentId, ['HELD'], 'CONFIRMED');
+    if (!appointment) {
+      throw new AppError(409, 'INVALID_TRANSITION', 'appointment is not in HELD state');
+    }
+    return appointment;
+  }
+
+  async cancel(appointmentId: string): Promise<Appointment> {
+    const appointment = await this.deps.appointments.updateStatus(
+      appointmentId,
+      ['HELD', 'CONFIRMED'],
+      'CANCELLED',
+      { cancelledReason: 'cancelled_by_customer' },
+    );
+    if (!appointment) {
+      throw new AppError(409, 'INVALID_TRANSITION', 'appointment cannot be cancelled');
+    }
+    return appointment;
+  }
+
+  async getAppointment(id: string): Promise<Appointment | null> {
+    return this.deps.appointments.getById(id);
+  }
+
+  async releaseExpiredHolds(): Promise<number> {
+    const released = await this.deps.appointments.releaseExpiredHolds(this.now().toISOString());
+    return released.length;
   }
 
   private now(): Date {

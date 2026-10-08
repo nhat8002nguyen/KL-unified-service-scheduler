@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { AppError } from '../common/errors';
-import { asyncHandler, headerValue, parseOrThrow } from '../common/http';
+import { asyncHandler, headerValue, parseOrThrow, pathParam } from '../common/http';
 import { logger } from '../telemetry/logger';
 import { slotSearchDuration } from '../telemetry/metrics';
 import type { BookingService } from './booking.types';
@@ -101,6 +101,34 @@ export function bookingRouter(service: BookingService): Router {
           res.status(422).json({ error: 'INVALID_SLOT', message: result.reason });
           return;
       }
+    }),
+  );
+
+  /** Read a single appointment. */
+  router.get(
+    '/appointments/:id',
+    asyncHandler(async (req, res) => {
+      const appointment = await service.getAppointment(pathParam(req, 'id'));
+      if (!appointment) {
+        throw new AppError(404, 'NOT_FOUND', 'appointment not found');
+      }
+      res.json({ appointment });
+    }),
+  );
+
+  /** Confirm a held appointment (HELD -> CONFIRMED). */
+  router.post(
+    '/appointments/:id/confirm',
+    asyncHandler(async (req, res) => {
+      res.json({ appointment: await service.confirm(pathParam(req, 'id')) });
+    }),
+  );
+
+  /** Cancel a held or confirmed appointment. */
+  router.post(
+    '/appointments/:id/cancel',
+    asyncHandler(async (req, res) => {
+      res.json({ appointment: await service.cancel(pathParam(req, 'id')) });
     }),
   );
 

@@ -98,4 +98,38 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
     );
     expect(overlap.outcome).toBe('conflict');
   });
+
+  it('updateStatus applies only when the current status is in the allowed from-set', async () => {
+    const stamp = Date.now();
+    const created = await repo.createWithReserve(reserve(`reserve-${stamp}-life`, 17));
+    expect(created.outcome).toBe('created');
+    if (created.outcome !== 'created') return;
+    const id = created.appointment.id;
+
+    // row is HELD; an update guarded on CONFIRMED must not apply
+    expect(await repo.updateStatus(id, ['CONFIRMED'], 'CANCELLED')).toBeNull();
+
+    expect((await repo.updateStatus(id, ['HELD'], 'CONFIRMED'))?.status).toBe('CONFIRMED');
+    // now CONFIRMED; a HELD-guarded update must not apply again
+    expect(await repo.updateStatus(id, ['HELD'], 'CONFIRMED')).toBeNull();
+    expect((await repo.updateStatus(id, ['CONFIRMED'], 'NO_SHOW'))?.status).toBe('NO_SHOW');
+  });
+
+  it('releaseExpiredHolds cancels only expired HELD appointments', async () => {
+    const stamp = Date.now();
+    const created = await repo.createWithReserve(reserve(`reserve-${stamp}-reap`, 18));
+    expect(created.outcome).toBe('created');
+    if (created.outcome !== 'created') return;
+
+    await pool.query(
+      "update appointment set hold_expires_at = now() - interval '1 minute' where id = $1",
+      [created.appointment.id],
+    );
+    const released = await repo.releaseExpiredHolds(new Date().toISOString());
+
+    expect(released).toContain(created.appointment.id);
+    const after = await repo.getById(created.appointment.id);
+    expect(after?.status).toBe('CANCELLED');
+    expect(after?.cancelledReason).toBe('hold_expired');
+  });
 });

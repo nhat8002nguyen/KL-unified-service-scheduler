@@ -123,3 +123,65 @@ describe('POST /appointments', () => {
     expect(res.body.error).toBe('INVALID_SLOT');
   });
 });
+
+describe('appointment lifecycle', () => {
+  it('POST /appointments/:id/confirm moves HELD -> CONFIRMED', async () => {
+    const confirmed: Appointment = { ...created, status: 'CONFIRMED' };
+    let captured: { from: string[]; to: string } | undefined;
+    const repo = repoStub({
+      updateStatus: async (_id, from, to) => {
+        captured = { from, to };
+        return to === 'CONFIRMED' ? confirmed : null;
+      },
+    });
+
+    const res = await request(makeApp(repo)).post('/appointments/a1/confirm').send();
+
+    expect(res.status).toBe(200);
+    expect(res.body.appointment.status).toBe('CONFIRMED');
+    // the service drives the state machine's legal pair
+    expect(captured).toEqual({ from: ['HELD'], to: 'CONFIRMED' });
+  });
+
+  it('POST /appointments/:id/confirm returns 409 when the update is refused', async () => {
+    const repo = repoStub({ updateStatus: async () => null });
+
+    const res = await request(makeApp(repo)).post('/appointments/a1/confirm').send();
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('INVALID_TRANSITION');
+  });
+
+  it('POST /appointments/:id/cancel sets CANCELLED with a customer reason', async () => {
+    const cancelled: Appointment = { ...created, status: 'CANCELLED', cancelledReason: 'cancelled_by_customer' };
+    let capturedFrom: string[] = [];
+    let capturedReason: string | undefined;
+    const repo = repoStub({
+      updateStatus: async (_id, from, to, extra) => {
+        capturedFrom = from;
+        capturedReason = extra?.cancelledReason;
+        return to === 'CANCELLED' ? cancelled : null;
+      },
+    });
+
+    const res = await request(makeApp(repo)).post('/appointments/a1/cancel').send();
+
+    expect(res.status).toBe(200);
+    expect(capturedFrom).toEqual(['HELD', 'CONFIRMED']);
+    expect(capturedReason).toBe('cancelled_by_customer');
+  });
+
+  it('GET /appointments/:id returns the appointment', async () => {
+    const res = await request(makeApp(repoStub({ getById: async () => created }))).get('/appointments/a1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.appointment.id).toBe('a1');
+  });
+
+  it('GET /appointments/:id returns 404 when missing', async () => {
+    const res = await request(makeApp(repoStub({ getById: async () => null }))).get('/appointments/nope');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('NOT_FOUND');
+  });
+});

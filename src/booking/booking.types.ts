@@ -95,4 +95,9 @@ export type CreateAppointmentResult =
 export interface BookingService {
   searchSlots(query: SearchSlotsQuery): Promise<Slot[]>;
   createAppointment(input: CreateAppointmentInput): Promise<CreateAppointmentResult>;
+  confirm(appointmentId: string): Promise<Appointment>;
+  cancel(appointmentId: string): Promise<Appointment>;
+  getAppointment(id: string): Promise<Appointment | null>;
+  /** Cancels every HELD appointment whose hold has expired; returns the count. */
+  releaseExpiredHolds(): Promise<number>;
 }
