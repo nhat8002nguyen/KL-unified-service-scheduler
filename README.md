@@ -185,3 +185,13 @@ run the requests top to bottom: *Search slots* stores the chosen slot and
 *Book appointment* stores the id, so the rest of the flow just works.
 `test/contract/postman.test.ts` keeps the collection honest (valid JSON, every
 `{{variable}}` defined, every request asserted).
+
+### Manual API testing (cURL)
+
+No Postman? `curl/` has the same flow as copy-paste commands
+([curl/README.md](curl/README.md)) plus a runnable script that walks it and
+checks every status:
+
+```bash
+BASE_URL=http://localhost:8080 ./curl/smoke.sh
+```

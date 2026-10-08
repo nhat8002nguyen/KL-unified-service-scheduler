@@ -81,3 +81,38 @@ describe('postman collection', () => {
     }
   });
 });
+
+describe('curl examples', () => {
+  /** Normalize a URL to a comparable path: drop the base, params become ':p'. */
+  const normalize = (raw: string): string =>
+    raw
+      .replace(/^\{\{baseUrl\}\}/, '')
+      .replace(/\{\{[^}]+\}\}/g, ':p')
+      .replace(/\$[A-Za-z_][A-Za-z0-9_]*/g, ':p')
+      .replace(/:[A-Za-z_][A-Za-z0-9_]*/g, ':p')
+      .split('?')[0]
+      .replace(/\/+$/, '');
+
+  it('cover every endpoint the Postman collection covers', () => {
+    const readme = readFileSync(join(process.cwd(), 'curl', 'README.md'), 'utf8');
+
+    const fromCollection = new Set(
+      requests
+        .map((r) => normalize(r.request?.url?.raw ?? ''))
+        .filter((path) => path.startsWith('/')),
+    );
+    const fromCurl = new Set(
+      Array.from(readme.matchAll(/\$BASE_URL(\/[A-Za-z0-9_/:$\{\}.-]*)/g), (m) => normalize(m[1] as string)),
+    );
+
+    expect([...fromCollection].filter((path) => !fromCurl.has(path))).toEqual([]);
+  });
+
+  it('ship a runnable smoke script', () => {
+    const script = readFileSync(join(process.cwd(), 'curl', 'smoke.sh'), 'utf8');
+
+    expect(script.startsWith('#!/usr/bin/env bash')).toBe(true);
+    expect(script).toContain('curl');
+    expect(script).toContain('/slots');
+  });
+});
