@@ -167,7 +167,7 @@ export class BookingServiceImpl implements BookingService {
       idempotencyKey: input.idempotencyKey,
       requestFingerprint,
       holdMinutes: this.deps.holdMinutes ?? DEFAULT_HOLD_MINUTES,
-      bufferMin: 0,
+      bufferMin: serviceType.bufferMin,
     });
 
     if (result.outcome === 'created') {

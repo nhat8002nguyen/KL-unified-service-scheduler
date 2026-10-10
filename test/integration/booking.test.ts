@@ -13,7 +13,10 @@ const url = process.env['DATABASE_URL'];
 const maybe = url ? describe : describe.skip;
 
 const DAY = { y: 2031, m: 0, d: 6 };
+const BUF_DAY = { y: 2031, m: 0, d: 8 };
 const at = (hour: number, minute = 0): string => new Date(Date.UTC(DAY.y, DAY.m, DAY.d, hour, minute)).toISOString();
+const atBuf = (hour: number, minute = 0): string =>
+  new Date(Date.UTC(BUF_DAY.y, BUF_DAY.m, BUF_DAY.d, hour, minute)).toISOString();
 
 maybe('appointment reserve (PostgreSQL 17)', () => {
   let pool: Pool;
@@ -174,6 +177,91 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
     if (again.outcome !== 'created') return;
     expect(again.appointment.id).not.toBe(first.appointment.id);
     expect(again.appointment.status).toBe('HELD');
+  });
+
+  it('rejects a booking that violates the service buffer after an existing appointment', async () => {
+    const stamp = Date.now();
+    const firstStart = atBuf(9);
+    const firstEnd = atBuf(11);
+    const first = await repo.createWithReserve({
+      ...reserve(`reserve-${stamp}-buf1`, 9),
+      startAt: firstStart,
+      endAt: firstEnd,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId: SEED.bays.diagnostic1,
+        technicianId: SEED.technicians.master,
+        startAt: firstStart,
+        endAt: firstEnd,
+      }),
+      bufferMin: 30,
+    });
+    expect(first.outcome).toBe('created');
+
+    const secondStart = atBuf(11);
+    const secondEnd = atBuf(13);
+    const second = await repo.createWithReserve({
+      ...reserve(`reserve-${stamp}-buf2`, 11),
+      startAt: secondStart,
+      endAt: secondEnd,
+      bayId: SEED.bays.diagnostic1,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId: SEED.bays.diagnostic1,
+        technicianId: SEED.technicians.master,
+        startAt: secondStart,
+        endAt: secondEnd,
+      }),
+      bufferMin: 30,
+    });
+    expect(second.outcome).toBe('conflict');
+  });
+
+  it('allows a booking that starts after the prior job plus buffer', async () => {
+    const stamp = Date.now();
+    const firstStart = atBuf(14);
+    const firstEnd = atBuf(16);
+    const first = await repo.createWithReserve({
+      ...reserve(`reserve-${stamp}-bufok1`, 14),
+      startAt: firstStart,
+      endAt: firstEnd,
+      bayId: SEED.bays.diagnostic2,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId: SEED.bays.diagnostic2,
+        technicianId: SEED.technicians.master,
+        startAt: firstStart,
+        endAt: firstEnd,
+      }),
+      bufferMin: 30,
+    });
+    expect(first.outcome).toBe('created');
+
+    const secondStart = atBuf(16, 30);
+    const secondEnd = atBuf(18, 30);
+    const second = await repo.createWithReserve({
+      ...reserve(`reserve-${stamp}-bufok2`, 16),
+      startAt: secondStart,
+      endAt: secondEnd,
+      bayId: SEED.bays.diagnostic2,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId: SEED.bays.diagnostic2,
+        technicianId: SEED.technicians.master,
+        startAt: secondStart,
+        endAt: secondEnd,
+      }),
+      bufferMin: 30,
+    });
+    expect(second.outcome).toBe('created');
   });
 
   it('busyIntervals ignores expired HELD appointments', async () => {

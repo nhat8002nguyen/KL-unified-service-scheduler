@@ -192,7 +192,8 @@ export class PgAppointmentRepo implements AppointmentRepository {
         });
       }
 
-      // Re-verify both resources are still free for the full window.
+      // Re-verify both resources are still free for the full window, extending
+      // each busy end by the service buffer (same semantics as findSlots).
       const clash = await client.query(
         `select 1 from appointment
           where dealership_id = $1
@@ -201,9 +202,17 @@ export class PgAppointmentRepo implements AppointmentRepository {
               or (status = 'HELD' and (hold_expires_at is null or hold_expires_at >= now()))
             )
             and (service_bay_id = $2 or technician_id = $3)
-            and tstzrange(start_at, end_at) && tstzrange($4::timestamptz, $5::timestamptz)
+            and tstzrange(start_at, end_at + make_interval(mins => $6::int))
+                && tstzrange($4::timestamptz, $5::timestamptz)
           limit 1`,
-        [input.dealershipId, input.bayId, input.technicianId, input.startAt, input.endAt],
+        [
+          input.dealershipId,
+          input.bayId,
+          input.technicianId,
+          input.startAt,
+          input.endAt,
+          input.bufferMin,
+        ],
       );
       if (clash.rowCount && clash.rowCount > 0) {
         await client.query('ROLLBACK');
