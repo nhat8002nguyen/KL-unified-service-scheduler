@@ -101,7 +101,7 @@ APP_ID=$(curl -s -X POST "$BASE_URL/appointments" -H 'content-type: application/
 
 ## 5. The two guarantees
 
-**Idempotent retry** — same `idempotency_key` returns the same appointment (`201`):
+**Idempotent retry** — same `idempotency_key` returns the same appointment (`200`; first create is `201`):
 
 ```bash
 # repeat the exact request from step 4 (same idempotency_key) -> same "id"

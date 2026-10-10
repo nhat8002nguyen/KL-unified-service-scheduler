@@ -117,7 +117,7 @@ check 409 "POST /appointments (same slot again)"
 json_has "$BODY" 'slot_taken' && printf '  ok   %-46s %s\n' "      → error is slot_taken" "" || printf '  FAIL body was not slot_taken\n'
 
 request POST "$BASE_URL/appointments" "$(body 'Smoke Customer' 'smoke@example.com' "$KEY_A")"
-check 201 "POST /appointments (idempotent retry)"
+check 200 "POST /appointments (idempotent retry)"
 repeat_id=$(json_get "$BODY" '.appointment.id' id)
 if [ "$repeat_id" = "$APP_ID" ]; then
   printf '  ok   %-46s %s\n' "      → same appointment id" ""
