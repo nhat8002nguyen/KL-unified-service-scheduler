@@ -62,7 +62,7 @@ interface SqlClient {
   ): Promise<{ rows: T[]; rowCount: number | null }>;
 }
 
-/** resolveActiveIdempotency returns duplicate/mismatch for an active HELD/CONFIRMED key, or null when free. */
+/** resolveActiveIdempotency returns duplicate/mismatch for a live HELD/CONFIRMED key, or null when free. */
 async function resolveActiveIdempotency(
   client: SqlClient,
   input: ReserveInput,
@@ -71,7 +71,10 @@ async function resolveActiveIdempotency(
     `select * from appointment
       where dealership_id = $1
         and idempotency_key = $2
-        and status in ('HELD', 'CONFIRMED')
+        and (
+          status = 'CONFIRMED'
+          or (status = 'HELD' and (hold_expires_at is null or hold_expires_at >= now()))
+        )
       limit 1`,
     [input.dealershipId, input.idempotencyKey],
   );
@@ -101,7 +104,10 @@ export class PgAppointmentRepo implements AppointmentRepository {
       `select service_bay_id, technician_id, start_at, end_at
          from appointment
         where dealership_id = $1
-          and status in ('HELD','CONFIRMED')
+          and (
+            status = 'CONFIRMED'
+            or (status = 'HELD' and (hold_expires_at is null or hold_expires_at >= now()))
+          )
           and tstzrange(start_at, end_at) && tstzrange($2::timestamptz, $3::timestamptz)`,
       [dealershipId, from, to],
     );
@@ -150,11 +156,50 @@ export class PgAppointmentRepo implements AppointmentRepository {
         return raced;
       }
 
+      // Exclusion constraints still treat expired HELD as occupying capacity, so
+      // cancel overlapping expired holds in this TX before clash/insert.
+      const expired = await client.query<{ id: string }>(
+        `update appointment
+            set status = 'CANCELLED',
+                cancelled_reason = 'hold_expired',
+                updated_at = now()
+          where dealership_id = $1
+            and status = 'HELD'
+            and hold_expires_at < now()
+            and (
+              idempotency_key = $6
+              or (
+                (service_bay_id = $2 or technician_id = $3)
+                and tstzrange(start_at, end_at) && tstzrange($4::timestamptz, $5::timestamptz)
+              )
+            )
+          returning id`,
+        [
+          input.dealershipId,
+          input.bayId,
+          input.technicianId,
+          input.startAt,
+          input.endAt,
+          input.idempotencyKey,
+        ],
+      );
+      const expiredAt = new Date().toISOString();
+      for (const row of expired.rows) {
+        await this.outbox.append(client, {
+          type: 'AppointmentCancelled',
+          appointmentId: row.id,
+          occurredAt: expiredAt,
+        });
+      }
+
       // Re-verify both resources are still free for the full window.
       const clash = await client.query(
         `select 1 from appointment
           where dealership_id = $1
-            and status in ('HELD','CONFIRMED')
+            and (
+              status = 'CONFIRMED'
+              or (status = 'HELD' and (hold_expires_at is null or hold_expires_at >= now()))
+            )
             and (service_bay_id = $2 or technician_id = $3)
             and tstzrange(start_at, end_at) && tstzrange($4::timestamptz, $5::timestamptz)
           limit 1`,

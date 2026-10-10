@@ -176,6 +176,36 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
     expect(again.appointment.status).toBe('HELD');
   });
 
+  it('busyIntervals ignores expired HELD appointments', async () => {
+    const key = `reserve-${Date.now()}-busy-exp`;
+    const created = await repo.createWithReserve(reserve(key, 14));
+    expect(created.outcome).toBe('created');
+    if (created.outcome !== 'created') return;
+
+    await pool.query(
+      "update appointment set hold_expires_at = now() - interval '1 minute' where id = $1",
+      [created.appointment.id],
+    );
+
+    const busy = await repo.busyIntervals(SEED.dealership, at(13), at(16));
+    expect(busy.find((b) => b.startAt === at(14))).toBeUndefined();
+  });
+
+  it('createWithReserve succeeds over an expired hold without waiting for the reaper', async () => {
+    const stamp = Date.now();
+    const first = await repo.createWithReserve(reserve(`reserve-${stamp}-exp1`, 16));
+    expect(first.outcome).toBe('created');
+    if (first.outcome !== 'created') return;
+
+    await pool.query(
+      "update appointment set hold_expires_at = now() - interval '1 minute' where id = $1",
+      [first.appointment.id],
+    );
+
+    const second = await repo.createWithReserve(reserve(`reserve-${stamp}-exp2`, 16));
+    expect(second.outcome).toBe('created');
+  });
+
   it('rejects the same idempotency key when the slot fingerprint differs', async () => {
     const key = `reserve-${Date.now()}-fp-mismatch`;
     const first = await repo.createWithReserve(reserve(key, 22));
