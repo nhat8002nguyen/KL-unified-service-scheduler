@@ -70,8 +70,12 @@ describe('GET /slots', () => {
     expect(res.status).toBe(200);
     expect(res.body.slots.length).toBeGreaterThan(0);
 
-    const starts = res.body.slots.map((s: { startAt: string }) => Date.parse(s.startAt));
-    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+    const desired = Date.parse(baseQuery.desired_at);
+    const distances = res.body.slots.map((s: { startAt: string }) =>
+      Math.abs(Date.parse(s.startAt) - desired),
+    );
+    // Ranked by proximity to desired (score), not wall-clock order.
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
     // 10:00-12:00 busy + 30min buffer => free blocks 08:00-10:00 and 12:30-17:00;
     // the block holding the desired 09:00 anchors there (nearest-to-desired first).
     expect(res.body.slots[0].startAt).toBe('2030-01-07T09:00:00.000Z');
