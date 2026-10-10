@@ -102,6 +102,8 @@ export interface BookingService {
   createAppointment(input: CreateAppointmentInput): Promise<CreateAppointmentResult>;
   confirm(appointmentId: string): Promise<Appointment>;
   cancel(appointmentId: string): Promise<Appointment>;
+  complete(appointmentId: string): Promise<Appointment>;
+  noShow(appointmentId: string): Promise<Appointment>;
   getAppointment(id: string): Promise<Appointment | null>;
   /** Cancels every HELD appointment whose hold has expired; returns the count. */
   releaseExpiredHolds(): Promise<number>;

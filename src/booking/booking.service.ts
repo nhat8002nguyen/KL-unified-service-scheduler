@@ -23,6 +23,7 @@ import type {
   CustomerWriter,
   SearchSlotsQuery,
 } from './booking.types';
+import type { AppointmentStatus } from '../domain/types';
 
 export interface BookingDeps {
   catalog: CatalogReader;
@@ -196,25 +197,55 @@ export class BookingServiceImpl implements BookingService {
 
   /** confirm transitions a held appointment to the confirmed state. */
   async confirm(appointmentId: string): Promise<Appointment> {
-    const appointment = await this.deps.appointments.updateStatus(appointmentId, ['HELD'], 'CONFIRMED');
-    if (!appointment) {
-      throw new AppError(409, 'INVALID_TRANSITION', 'appointment is not in HELD state');
-    }
-    return appointment;
+    return this.transition(appointmentId, ['HELD'], 'CONFIRMED', undefined, 'appointment is not in HELD state');
   }
 
   /** cancel transitions a held or confirmed appointment to the cancelled state. */
   async cancel(appointmentId: string): Promise<Appointment> {
-    const appointment = await this.deps.appointments.updateStatus(
+    return this.transition(
       appointmentId,
       ['HELD', 'CONFIRMED'],
       'CANCELLED',
       { cancelledReason: 'cancelled_by_customer' },
+      'appointment cannot be cancelled',
     );
-    if (!appointment) {
-      throw new AppError(409, 'INVALID_TRANSITION', 'appointment cannot be cancelled');
-    }
-    return appointment;
+  }
+
+  /** complete transitions a confirmed appointment to completed. */
+  async complete(appointmentId: string): Promise<Appointment> {
+    return this.transition(
+      appointmentId,
+      ['CONFIRMED'],
+      'COMPLETED',
+      undefined,
+      'appointment is not in CONFIRMED state',
+    );
+  }
+
+  /** noShow transitions a confirmed appointment to no-show. */
+  async noShow(appointmentId: string): Promise<Appointment> {
+    return this.transition(
+      appointmentId,
+      ['CONFIRMED'],
+      'NO_SHOW',
+      undefined,
+      'appointment is not in CONFIRMED state',
+    );
+  }
+
+  /** transition loads the appointment, then applies a guarded status update. */
+  private async transition(
+    id: string,
+    from: AppointmentStatus[],
+    to: AppointmentStatus,
+    extra?: { cancelledReason?: string },
+    invalidMessage = 'invalid appointment transition',
+  ): Promise<Appointment> {
+    const existing = await this.deps.appointments.getById(id);
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'appointment not found');
+    const updated = await this.deps.appointments.updateStatus(id, from, to, extra);
+    if (!updated) throw new AppError(409, 'INVALID_TRANSITION', invalidMessage);
+    return updated;
   }
 
   /** getAppointment returns the appointment for the given id, or null when none exists. */

@@ -137,6 +137,7 @@ describe('appointment lifecycle', () => {
     const confirmed: Appointment = { ...created, status: 'CONFIRMED' };
     let captured: { from: string[]; to: string } | undefined;
     const repo = repoStub({
+      getById: async () => created,
       updateStatus: async (_id, from, to) => {
         captured = { from, to };
         return to === 'CONFIRMED' ? confirmed : null;
@@ -151,13 +152,50 @@ describe('appointment lifecycle', () => {
     expect(captured).toEqual({ from: ['HELD'], to: 'CONFIRMED' });
   });
 
-  it('POST /appointments/:id/confirm returns 409 when the update is refused', async () => {
-    const repo = repoStub({ updateStatus: async () => null });
+  it('POST /appointments/:id/confirm returns 404 when the appointment is missing', async () => {
+    const repo = repoStub({
+      getById: async () => null,
+      updateStatus: async () => null,
+    });
+    const res = await request(makeApp(repo)).post('/appointments/missing/confirm').send();
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('NOT_FOUND');
+  });
 
+  it('POST /appointments/:id/confirm returns 409 when present but not HELD', async () => {
+    const confirmed: Appointment = { ...created, status: 'CONFIRMED' };
+    const repo = repoStub({
+      getById: async () => confirmed,
+      updateStatus: async () => null,
+    });
     const res = await request(makeApp(repo)).post('/appointments/a1/confirm').send();
-
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('INVALID_TRANSITION');
+  });
+
+  it('POST /appointments/:id/complete moves CONFIRMED -> COMPLETED', async () => {
+    const confirmed: Appointment = { ...created, status: 'CONFIRMED' };
+    const completed: Appointment = { ...created, status: 'COMPLETED' };
+    const repo = repoStub({
+      getById: async () => confirmed,
+      updateStatus: async (_id, from, to) =>
+        to === 'COMPLETED' && from.includes('CONFIRMED') ? completed : null,
+    });
+    const res = await request(makeApp(repo)).post('/appointments/a1/complete').send();
+    expect(res.status).toBe(200);
+    expect(res.body.appointment.status).toBe('COMPLETED');
+  });
+
+  it('POST /appointments/:id/no-show moves CONFIRMED -> NO_SHOW', async () => {
+    const confirmed: Appointment = { ...created, status: 'CONFIRMED' };
+    const noShow: Appointment = { ...created, status: 'NO_SHOW' };
+    const repo = repoStub({
+      getById: async () => confirmed,
+      updateStatus: async (_id, _from, to) => (to === 'NO_SHOW' ? noShow : null),
+    });
+    const res = await request(makeApp(repo)).post('/appointments/a1/no-show').send();
+    expect(res.status).toBe(200);
+    expect(res.body.appointment.status).toBe('NO_SHOW');
   });
 
   it('POST /appointments/:id/cancel sets CANCELLED with a customer reason', async () => {
@@ -165,6 +203,7 @@ describe('appointment lifecycle', () => {
     let capturedFrom: string[] = [];
     let capturedReason: string | undefined;
     const repo = repoStub({
+      getById: async () => created,
       updateStatus: async (_id, from, to, extra) => {
         capturedFrom = from;
         capturedReason = extra?.cancelledReason;

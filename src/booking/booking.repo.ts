@@ -287,6 +287,7 @@ export class PgAppointmentRepo implements AppointmentRepository {
         `update appointment
             set status = $3,
                 cancelled_reason = coalesce($4, cancelled_reason),
+                hold_expires_at = case when $3 = 'CONFIRMED' then null else hold_expires_at end,
                 updated_at = now()
           where id = $1 and status = any($2::text[])
           returning *`,

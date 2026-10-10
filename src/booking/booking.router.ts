@@ -141,5 +141,21 @@ export function bookingRouter(service: BookingService): Router {
     }),
   );
 
+  /** Complete a confirmed appointment. */
+  router.post(
+    '/appointments/:id/complete',
+    asyncHandler(async (req, res) => {
+      res.json({ appointment: await service.complete(pathParam(req, 'id')) });
+    }),
+  );
+
+  /** Mark a confirmed appointment as no-show. */
+  router.post(
+    '/appointments/:id/no-show',
+    asyncHandler(async (req, res) => {
+      res.json({ appointment: await service.noShow(pathParam(req, 'id')) });
+    }),
+  );
+
   return router;
 }
