@@ -151,7 +151,8 @@ export class PgAppointmentRepo implements AppointmentRepository {
             start_at, end_at, status, hold_expires_at, idempotency_key)
          values ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, 'HELD',
                  now() + make_interval(mins => $9::int), $10)
-         on conflict (dealership_id, idempotency_key) do nothing
+         on conflict (dealership_id, idempotency_key) where (status in ('HELD','CONFIRMED'))
+         do nothing
          returning *`,
         [
           input.dealershipId,
