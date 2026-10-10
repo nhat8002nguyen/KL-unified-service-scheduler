@@ -34,12 +34,16 @@ export interface ReserveInput {
   startAt: string;
   endAt: string;
   idempotencyKey: string;
+  requestFingerprint: string;
   holdMinutes: number;
+  /** Service buffer minutes; clash checks use this (0 until buffer enforcement is wired). */
+  bufferMin: number;
 }
 
 export type ReserveResult =
   | { outcome: 'created'; appointment: Appointment }
   | { outcome: 'duplicate'; appointment: Appointment }
+  | { outcome: 'idempotency_mismatch' }
   | { outcome: 'conflict' };
 
 export interface AppointmentRepository extends AppointmentReader {
@@ -88,6 +92,7 @@ export interface CreateAppointmentInput {
 export type CreateAppointmentResult =
   | { outcome: 'created'; appointment: Appointment }
   | { outcome: 'duplicate'; appointment: Appointment }
+  | { outcome: 'idempotency_mismatch' }
   | { outcome: 'conflict'; nextAvailable: Slot[] }
   | { outcome: 'invalid_slot'; reason: string };
 

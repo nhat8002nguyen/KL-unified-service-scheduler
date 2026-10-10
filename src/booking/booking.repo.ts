@@ -24,6 +24,7 @@ interface AppointmentRow {
   status: AppointmentStatus;
   hold_expires_at: Date | null;
   cancelled_reason: string | null;
+  request_fingerprint: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -53,6 +54,34 @@ interface PgError {
 }
 
 const EXCLUSION_VIOLATION = '23P01';
+
+interface SqlClient {
+  query<T = unknown>(
+    text: string,
+    values?: unknown[],
+  ): Promise<{ rows: T[]; rowCount: number | null }>;
+}
+
+/** resolveActiveIdempotency returns duplicate/mismatch for an active HELD/CONFIRMED key, or null when free. */
+async function resolveActiveIdempotency(
+  client: SqlClient,
+  input: ReserveInput,
+): Promise<ReserveResult | null> {
+  const existing = await client.query<AppointmentRow>(
+    `select * from appointment
+      where dealership_id = $1
+        and idempotency_key = $2
+        and status in ('HELD', 'CONFIRMED')
+      limit 1`,
+    [input.dealershipId, input.idempotencyKey],
+  );
+  const row = existing.rows[0];
+  if (!row) return null;
+  if (row.request_fingerprint === input.requestFingerprint) {
+    return { outcome: 'duplicate', appointment: mapAppointment(row) };
+  }
+  return { outcome: 'idempotency_mismatch' };
+}
 
 export class PgAppointmentRepo implements AppointmentRepository {
   /** constructor stores the database pool and outbox writer. */
@@ -95,23 +124,18 @@ export class PgAppointmentRepo implements AppointmentRepository {
   }
 
   /** createWithReserve atomically reserves a bay and technician and creates the appointment.
-   * It first honors idempotency, then locks both resources and re-checks availability to stay conflict-free.
-   * Returns the created appointment, an existing duplicate, or a conflict outcome. */
+   * It first honors active-key idempotency (with fingerprint checks), then locks both resources
+   * and re-checks availability to stay conflict-free.
+   * Returns the created appointment, an existing duplicate, a fingerprint mismatch, or a conflict. */
   async createWithReserve(input: ReserveInput): Promise<ReserveResult> {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
 
-      // Idempotency first: a retry of the same key returns the existing row,
-      // even though it overlaps (the retry is the same booking).
-      const existing = await client.query<AppointmentRow>(
-        'select * from appointment where dealership_id = $1 and idempotency_key = $2 limit 1',
-        [input.dealershipId, input.idempotencyKey],
-      );
-      const existingRow = existing.rows[0];
-      if (existingRow) {
+      const early = await resolveActiveIdempotency(client, input);
+      if (early) {
         await client.query('ROLLBACK');
-        return { outcome: 'duplicate', appointment: mapAppointment(existingRow) };
+        return early;
       }
 
       // Serialize competitors for the same two resources before inserting.
@@ -120,14 +144,10 @@ export class PgAppointmentRepo implements AppointmentRepository {
 
       // Re-check idempotency now that we hold the locks: a concurrent same-key
       // submit has either committed (visible now) or is queued behind us.
-      const raced = await client.query<AppointmentRow>(
-        'select * from appointment where dealership_id = $1 and idempotency_key = $2 limit 1',
-        [input.dealershipId, input.idempotencyKey],
-      );
-      const racedRow = raced.rows[0];
-      if (racedRow) {
+      const raced = await resolveActiveIdempotency(client, input);
+      if (raced) {
         await client.query('ROLLBACK');
-        return { outcome: 'duplicate', appointment: mapAppointment(racedRow) };
+        return raced;
       }
 
       // Re-verify both resources are still free for the full window.
@@ -148,9 +168,9 @@ export class PgAppointmentRepo implements AppointmentRepository {
       const inserted = await client.query<AppointmentRow>(
         `insert into appointment
            (dealership_id, customer_id, vehicle_id, service_type_id, service_bay_id, technician_id,
-            start_at, end_at, status, hold_expires_at, idempotency_key)
+            start_at, end_at, status, hold_expires_at, idempotency_key, request_fingerprint)
          values ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, 'HELD',
-                 now() + make_interval(mins => $9::int), $10)
+                 now() + make_interval(mins => $9::int), $10, $11)
          on conflict (dealership_id, idempotency_key) where (status in ('HELD','CONFIRMED'))
          do nothing
          returning *`,
@@ -165,19 +185,14 @@ export class PgAppointmentRepo implements AppointmentRepository {
           input.endAt,
           input.holdMinutes,
           input.idempotencyKey,
+          input.requestFingerprint,
         ],
       );
 
       if (inserted.rowCount === 0) {
-        const existing = await client.query<AppointmentRow>(
-          'select * from appointment where dealership_id = $1 and idempotency_key = $2 limit 1',
-          [input.dealershipId, input.idempotencyKey],
-        );
+        const conflicted = await resolveActiveIdempotency(client, input);
         await client.query('ROLLBACK');
-        const row = existing.rows[0];
-        return row
-          ? { outcome: 'duplicate', appointment: mapAppointment(row) }
-          : { outcome: 'conflict' };
+        return conflicted ?? { outcome: 'conflict' };
       }
 
       const row = inserted.rows[0];
@@ -295,22 +310,30 @@ export class PgCustomerRepo implements CustomerWriter {
   /** constructor stores the database pool used to read and write customers. */
   constructor(private readonly db: Db) {}
 
-  /** upsert returns the customer matching the input email, or inserts a new customer and returns its id. */
+  /** upsert inserts a customer or updates the existing row matched by unique email. */
   async upsert(input: CustomerInput): Promise<{ id: string }> {
-    if (input.email) {
-      const existing = await this.db.query<{ id: string }>(
-        'select id from customer where email = $1 limit 1',
-        [input.email],
+    if (!input.email) {
+      const inserted = await this.db.query<{ id: string }>(
+        'insert into customer (name, phone, email) values ($1, $2, null) returning id',
+        [input.name, input.phone ?? null],
       );
-      const row = existing.rows[0];
-      if (row) return { id: row.id };
+      const row = inserted.rows[0];
+      if (!row) throw new Error('customer insert returned no row');
+      return { id: row.id };
     }
-    const inserted = await this.db.query<{ id: string }>(
-      'insert into customer (name, phone, email) values ($1, $2, $3) returning id',
-      [input.name, input.phone ?? null, input.email ?? null],
+
+    const upserted = await this.db.query<{ id: string }>(
+      `insert into customer (name, phone, email)
+       values ($1, $2, $3)
+       on conflict (email) where (email is not null)
+       do update set
+         name = excluded.name,
+         phone = coalesce(excluded.phone, customer.phone)
+       returning id`,
+      [input.name, input.phone ?? null, input.email],
     );
-    const row = inserted.rows[0];
-    if (!row) throw new Error('customer insert returned no row');
+    const row = upserted.rows[0];
+    if (!row) throw new Error('customer upsert returned no row');
     return { id: row.id };
   }
 }

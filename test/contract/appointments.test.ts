@@ -94,8 +94,16 @@ describe('POST /appointments', () => {
     const repo = repoStub({ createWithReserve: async () => ({ outcome: 'duplicate', appointment: created }) });
     const res = await request(makeApp(repo)).post('/appointments').send(body);
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body.appointment.id).toBe('a1');
+  });
+
+  it('returns 422 IDEMPOTENCY_MISMATCH when the key is reused with a different payload', async () => {
+    const repo = repoStub({ createWithReserve: async () => ({ outcome: 'idempotency_mismatch' }) });
+    const res = await request(makeApp(repo)).post('/appointments').send(body);
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('IDEMPOTENCY_MISMATCH');
   });
 
   it('rejects a bay that is not at the dealership with 422 INVALID_SLOT', async () => {

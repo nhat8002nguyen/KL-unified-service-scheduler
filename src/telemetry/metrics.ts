@@ -19,7 +19,7 @@ export const httpRequestsTotal = new client.Counter({
   registers: [registry],
 });
 
-/** Appointment creation outcomes: created | duplicate | conflict | invalid_slot. */
+/** Appointment creation outcomes: created | duplicate | idempotency_mismatch | conflict | invalid_slot. */
 export const appointmentOutcomes = new client.Counter({
   name: 'appointments_total',
   help: 'Appointment creation outcomes',

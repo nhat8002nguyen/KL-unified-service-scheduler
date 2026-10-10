@@ -3,6 +3,7 @@ import knexLib from 'knex';
 import { Pool } from 'pg';
 import { PgAppointmentRepo } from '../../src/booking/booking.repo';
 import type { ReserveInput } from '../../src/booking/booking.types';
+import { fingerprintReserveRequest } from '../../src/booking/idempotency';
 import { knexConfig } from '../../src/db/knexconfig';
 import { SEED } from '../../src/db/seed-ids';
 import { seed } from '../../src/db/seeds/001_demo';
@@ -32,6 +33,8 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
     hour: number,
     bayId: string = SEED.bays.diagnostic1,
   ): ReserveInput {
+    const startAt = at(hour);
+    const endAt = at(hour + 1);
     return {
       dealershipId: SEED.dealership,
       serviceTypeId: SEED.serviceTypes.diagnostic,
@@ -39,10 +42,20 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
       customerId: SEED.customer,
       bayId,
       technicianId: SEED.technicians.master,
-      startAt: at(hour),
-      endAt: at(hour + 1),
+      startAt,
+      endAt,
       idempotencyKey: key,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId,
+        technicianId: SEED.technicians.master,
+        startAt,
+        endAt,
+      }),
       holdMinutes: 10,
+      bufferMin: 0,
     };
   }
 
@@ -146,6 +159,42 @@ maybe('appointment reserve (PostgreSQL 17)', () => {
 
     const again = await repo.createWithReserve(reserve(`reserve-${stamp}-free2`, 20));
     expect(again.outcome).toBe('created');
+  });
+
+  it('allows reusing an idempotency key after cancel', async () => {
+    const key = `reserve-${Date.now()}-reuse-key`;
+    const first = await repo.createWithReserve(reserve(key, 7));
+    expect(first.outcome).toBe('created');
+    if (first.outcome !== 'created') return;
+
+    await repo.updateStatus(first.appointment.id, ['HELD'], 'CANCELLED', { cancelledReason: 'test' });
+
+    const again = await repo.createWithReserve(reserve(key, 8));
+    expect(again.outcome).toBe('created');
+    if (again.outcome !== 'created') return;
+    expect(again.appointment.id).not.toBe(first.appointment.id);
+    expect(again.appointment.status).toBe('HELD');
+  });
+
+  it('rejects the same idempotency key when the slot fingerprint differs', async () => {
+    const key = `reserve-${Date.now()}-fp-mismatch`;
+    const first = await repo.createWithReserve(reserve(key, 22));
+    expect(first.outcome).toBe('created');
+
+    const mismatch = await repo.createWithReserve({
+      ...reserve(key, 22),
+      bayId: SEED.bays.diagnostic2,
+      requestFingerprint: fingerprintReserveRequest({
+        dealershipId: SEED.dealership,
+        serviceTypeId: SEED.serviceTypes.diagnostic,
+        vehicleId: SEED.vehicle,
+        bayId: SEED.bays.diagnostic2,
+        technicianId: SEED.technicians.master,
+        startAt: at(22),
+        endAt: at(23),
+      }),
+    });
+    expect(mismatch.outcome).toBe('idempotency_mismatch');
   });
 
   it('re-running the seed does not delete existing appointments', async () => {

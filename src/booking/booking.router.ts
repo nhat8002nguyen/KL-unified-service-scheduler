@@ -22,7 +22,7 @@ const CreateAppointmentSchema = z.object({
   customer: z.object({
     name: z.string().min(1),
     phone: z.string().min(1).optional(),
-    email: z.string().email().optional(),
+    email: z.email().optional(),
   }),
   bay_id: z.string().min(1),
   technician_id: z.string().min(1),
@@ -88,8 +88,16 @@ export function bookingRouter(service: BookingService): Router {
 
       switch (result.outcome) {
         case 'created':
-        case 'duplicate':
           res.status(201).json({ appointment: result.appointment });
+          return;
+        case 'duplicate':
+          res.status(200).json({ appointment: result.appointment });
+          return;
+        case 'idempotency_mismatch':
+          res.status(422).json({
+            error: 'IDEMPOTENCY_MISMATCH',
+            message: 'idempotency_key was reused with a different booking payload',
+          });
           return;
         case 'conflict':
           logger.info(

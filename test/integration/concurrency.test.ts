@@ -134,7 +134,7 @@ maybe('concurrent booking end to end', () => {
       request(app).post('/appointments').send(body),
     ]);
 
-    expect([a.status, b.status]).toEqual([201, 201]);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
     expect(a.body.appointment.id).toBe(b.body.appointment.id);
 
     const count = await pool.query<{ n: number }>(

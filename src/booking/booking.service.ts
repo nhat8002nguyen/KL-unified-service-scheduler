@@ -13,6 +13,7 @@ import type {
   VehicleReader,
 } from '../resources/resources.types';
 import { appointmentConflicts, appointmentOutcomes } from '../telemetry/metrics';
+import { fingerprintReserveRequest } from './idempotency';
 import type {
   Appointment,
   AppointmentRepository,
@@ -142,6 +143,18 @@ export class BookingServiceImpl implements BookingService {
 
     const customer = await this.deps.customers.upsert(input.customer);
 
+    const startAt = start.toISOString();
+    const endAt = end.toISOString();
+    const requestFingerprint = fingerprintReserveRequest({
+      dealershipId: input.dealershipId,
+      serviceTypeId: serviceType.id,
+      vehicleId: vehicle.id,
+      bayId: bay.id,
+      technicianId: technician.id,
+      startAt,
+      endAt,
+    });
+
     const result = await this.deps.appointments.createWithReserve({
       dealershipId: input.dealershipId,
       serviceTypeId: serviceType.id,
@@ -149,10 +162,12 @@ export class BookingServiceImpl implements BookingService {
       customerId: customer.id,
       bayId: bay.id,
       technicianId: technician.id,
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
+      startAt,
+      endAt,
       idempotencyKey: input.idempotencyKey,
+      requestFingerprint,
       holdMinutes: this.deps.holdMinutes ?? DEFAULT_HOLD_MINUTES,
+      bufferMin: 0,
     });
 
     if (result.outcome === 'created') {
@@ -162,6 +177,10 @@ export class BookingServiceImpl implements BookingService {
     if (result.outcome === 'duplicate') {
       appointmentOutcomes.inc({ outcome: 'duplicate' });
       return { outcome: 'duplicate', appointment: result.appointment };
+    }
+    if (result.outcome === 'idempotency_mismatch') {
+      appointmentOutcomes.inc({ outcome: 'idempotency_mismatch' });
+      return { outcome: 'idempotency_mismatch' };
     }
 
     appointmentOutcomes.inc({ outcome: 'conflict' });
