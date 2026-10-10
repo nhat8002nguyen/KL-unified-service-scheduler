@@ -56,15 +56,15 @@ describe('availability engine', () => {
     expect(findSlots(input(majorRepair, at('08:00')), ctx(busy))).toEqual([]);
 
     const oil = findSlots(input(oilChange, at('08:00')), ctx(busy));
-    expect(oil).toHaveLength(1);
-    expect(oil[0]?.startAt).toBe(at('08:00'));
-    expect(oil[0]?.endAt).toBe(at('09:00'));
+    expect(oil.length).toBeGreaterThan(0);
+    expect(oil.every((s) => Date.parse(s.endAt) <= Date.parse(at('10:00')))).toBe(true);
+    expect(oil.some((s) => s.startAt === at('08:00'))).toBe(true);
   });
 
   it('keeps the slot at the service duration (buffer is not added to the slot)', () => {
     const slots = findSlots(input(oilChange, at('08:00')), ctx());
 
-    expect(slots).toHaveLength(1);
+    expect(slots.length).toBeGreaterThan(0);
     expect(slots[0]?.startAt).toBe(at('08:00'));
     expect(slots[0]?.endAt).toBe(at('09:00'));
   });
@@ -84,11 +84,14 @@ describe('availability engine', () => {
   it('keeps slots inside dealership hours and ranks nearest to the desired time first', () => {
     const busy = [{ bayId: 'b1', technicianId: 't1', startAt: at('09:00'), endAt: at('10:00') }];
 
-    const slots = findSlots(input(oilChange, at('10:30')), ctx(busy));
+    const slots = findSlots(
+      { ...input(oilChange, at('10:30')), limit: 50 },
+      ctx(busy),
+    );
 
-    // busy 09:00-10:00 + 30min buffer => free blocks 08:00-09:00 (150 min from desired)
-    // and 10:30-17:00 (0 min from desired); nearest first.
-    expect(slots.map((s) => s.startAt)).toEqual([at('10:30'), at('08:00')]);
+    // busy 09:00-10:00 + 30min buffer => free blocks 08:00-09:00 and 10:30-17:00
+    expect(slots[0]?.startAt).toBe(at('10:30'));
+    expect(slots.some((s) => s.startAt === at('08:00'))).toBe(true);
     for (const s of slots) {
       expect(Date.parse(s.startAt)).toBeGreaterThanOrEqual(Date.parse(at('08:00')));
       expect(Date.parse(s.endAt)).toBeLessThanOrEqual(Date.parse(at('17:00')));
@@ -102,8 +105,22 @@ describe('availability engine', () => {
       ctx(),
     );
 
-    expect(slots).toHaveLength(1);
-    expect(slots[0]?.startAt).toBe(at('15:00'));
-    expect(Date.parse(slots[0]?.startAt ?? '')).toBeGreaterThanOrEqual(Date.parse(at('10:00')));
+    expect(slots.some((s) => s.startAt === at('15:00'))).toBe(true);
+    for (const s of slots) {
+      expect(Date.parse(s.startAt)).toBeGreaterThanOrEqual(Date.parse(at('10:00')));
+    }
+  });
+
+  it('emits multiple stepped starts inside a long free block and ranks nearest first', () => {
+    const slots = findSlots(
+      { dealershipId: 'd1', serviceType: oilChange, desiredAt: at('12:00'), horizonDays: 0, limit: 5, now: at('07:00') },
+      ctx(),
+    );
+
+    expect(slots.length).toBe(5);
+    expect(slots[0]?.startAt).toBe(at('12:00'));
+    const starts = slots.map((s) => s.startAt);
+    expect(starts).toContain(at('11:45'));
+    expect(starts).toContain(at('12:15'));
   });
 });
