@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# smoke.sh runs the whole booking flow with curl — the same sequence as the
+# smoke.sh runs the whole booking flow with curl; the same sequence as the
 # Postman collection, for when Postman is unavailable.
 #
 #   BASE_URL=http://localhost:8080 ./curl/smoke.sh
@@ -74,7 +74,7 @@ plus_days_iso() {
   date -u -v+"$1"d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "+$1 days" +%Y-%m-%dT%H:%M:%SZ
 }
 
-printf 'Unified Service Scheduler — curl smoke test\n'
+printf 'Unified Service Scheduler - curl smoke test\n'
 printf 'base url: %s\n\n' "$BASE_URL"
 
 printf '1. service health\n'
@@ -96,7 +96,7 @@ TECH_ID=$(json_get "$BODY" '.slots[0].technicianId' technicianId)
 START_AT=$(json_get "$BODY" '.slots[0].startAt' startAt)
 END_AT=$(json_get "$BODY" '.slots[0].endAt' endAt)
 if [ -z "$BAY_ID" ] || [ -z "$START_AT" ]; then
-  printf '  FAIL no slot returned — is the database seeded?\n'
+  printf '  FAIL no slot returned; is the database seeded?\n'
   exit 1
 fi
 printf '       picked slot %s .. %s (bay %s, tech %s)\n' "$START_AT" "$END_AT" "$BAY_ID" "$TECH_ID"

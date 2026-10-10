@@ -145,9 +145,11 @@ src/
   `23P01`; the loser of a race gets a clean `409`. Partitioning needs
   PostgreSQL 17+ because the constraint includes the partition key (`dealership_id
   WITH =`).
-- **Idempotency:** `unique (dealership_id, idempotency_key)` makes a client retry
-  return the original appointment (checked before the overlap test).
-- **Reference data is cached/cheap; diaries are not.** No replicated schedules.
+- **Idempotency:** a partial unique index on `(dealership_id, idempotency_key)`
+  for active (`HELD`/`CONFIRMED`) rows, plus a request fingerprint so a reused
+  key with a different payload is rejected. Checked before the overlap test.
+- **Reference data is small and read often; diaries are the hot path.** No
+  in-process cache and no replicated schedules in this MVP.
 
 ### Splitting a module into a microservice
 
@@ -177,7 +179,8 @@ Every module depends on an interface, e.g. `CatalogReader`, `VehicleReader`,
   `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector to export.
 - **Metrics (prom-client):** `http_request_duration_seconds`,
   `http_requests_total`, `slot_search_duration_seconds`, `appointments_total`
-  (created|duplicate|conflict|invalid_slot), `appointment_conflicts_total`.
+  (created|duplicate|idempotency_mismatch|conflict|invalid_slot),
+  `appointment_conflicts_total`.
 
 ## Testing
 
@@ -223,18 +226,18 @@ summary**. (The design-phase half of this story is §5 of
 ### Directing it
 
 - **A written plan, not a chat transcript.** `docs/superpowers/plans/` holds the
-  plan the build followed: goal, global constraints, a *review focus* list of the
-  failure modes no happy-path test would catch, and per-task acceptance
-  criteria. Work was executed task by task against that file.
-- **Constraints stated once, up front.** The plan fixes the non-negotiables,
-  "only the DB decides no double booking", "a 4 h job must never be offered in a
-  2 h gap", "a bay or technician from another dealership must never be offered",
-  UTC-only timestamps, so they could not be quietly re-litigated later.
+  plans the build followed: goal, global constraints, failure modes no happy-path
+  test would catch, and per-task acceptance criteria. Work was executed task by
+  task against those files.
+- **Constraints stated once, up front.** The plan fixes the non-negotiables:
+  only the DB decides no double booking, a 4 h job must never be offered in a
+  2 h gap, a bay or technician from another dealership must never be offered,
+  UTC-only timestamps; so they could not be quietly re-litigated later.
 - **Standards as rules, not reminders.** `.reasonix/rules/function-doc-comments.mdc`
   pins the doc-comment style for TypeScript files; commit `4e17f57` applies it to
   every function in `src/`. The rule is versioned with the code, so the standard
   outlives the session that produced it.
-- **One module at a time.** The history is a sequence of small, reviewable steps,
+- **One module at a time.** The history is a sequence of small, reviewable steps:
   availability engine → `GET /slots` → transactional reserve → lifecycle +
   reaper → diary views, each committed with its own tests, so a wrong direction
   could not spread across the build.
@@ -243,8 +246,8 @@ summary**. (The design-phase half of this story is §5 of
 
 - **The central claim has a test, not a paragraph.** "Never double-booked" is
   proved by `test/integration/concurrency.test.ts`: two concurrent
-  `POST /appointments` against real PostgreSQL must produce exactly one `201`
-  and one `409`.
+  `POST /appointments` for the same slot (different idempotency keys) against
+  real PostgreSQL must produce exactly one `201` and one `409`.
 - **Three levels, each with a job.** Unit (`test/unit/`) for interval algebra,
   the availability engine and the state machine; contract (`test/contract/`) for
   endpoint behaviour over fake adapters with supertest; integration
@@ -252,14 +255,12 @@ summary**. (The design-phase half of this story is §5 of
   idempotency, lifecycle, reaper, and the race.
 - **The harness is verified too.** `test/contract/postman.test.ts` fails if the
   Postman collection is invalid JSON, uses an undefined `{{variable}}`, or
-  contains a request with no assertion, client-side artifacts that cannot rot
-  silently.
+  contains a request with no assertion.
 - **An adversarial review pass, turned into fixes.** Commit `13686bb` is one
   review round that found and fixed five real defects: Docker build deps,
   `EXCLUDE` constraints that were not *partial* (a cancelled appointment kept
   blocking its bay), same-day slot handling, concurrent idempotency, and a
-  destructive seed. That commit is the honest measure of how much the first pass
-  missed.
+  destructive seed.
 - **Primary sources beat an agent's summary.** Where the agent asserted a
   database fact, I checked it in the PostgreSQL documentation rather than
   accepting the paraphrase.
@@ -270,22 +271,23 @@ summary**. (The design-phase half of this story is §5 of
   constraint from PostgreSQL 17 (15/16 allow it on each leaf partition only), and
   the constraint must include the partition key compared with `=`. Caught by
   checking the PostgreSQL docs; the plan file had it right and the design
-  document did not, so the document was corrected to 17+.
-- **A diagram that no longer matched the document.** Reviewing the *exported
-  image* rather than the source XML is how a stale draft (still showing
-  `GET /api/tickets`, with no availability engine) and connectors running through
-  container labels got caught.
+  document was corrected to 17+.
+- **Diagram / document drift.** Reviewing the exported architecture image against
+  the written design caught stale labels and layout issues (connectors through
+  container labels) before they shipped in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
 - **A SQL snippet that would not have run.** The exclusion constraints compare
-  UUID columns with `=`, which needs `btree_gist`; the migration installs it, and
-  the document's snippet now shows it.
-- **Contract drift.** The Postman collection and the cURL smoke script are kept
-  honest by tests, `test/contract/postman.test.ts`, and a script that asserts
-  every status code it prints.
+  UUID columns with `=`, which needs `btree_gist`; migration `001_catalog.ts`
+  installs it, and the design document's snippet shows it.
+- **Contract drift.** The Postman collection is checked by
+  `test/contract/postman.test.ts`; `curl/smoke.sh` asserts every status code it
+  prints.
 
 ### What I own
 
-The decisions, the constraints the build had to satisfy, the rejected
-alternatives (event sourcing, a distributed lock, one database per service), the
-design review, the diagram, the acceptance tests, and the text of this README and
-the design document. The AI moved fast on the code; the shaping and the
-verification were mine.
+The decisions and constraints the build had to satisfy (DB-authoritative booking,
+advisory search, partial exclusion constraints, outbox stub with no transport),
+the design review, the diagram, the acceptance tests, and the text of this README
+and the design document. Serialization uses Postgres `SELECT … FOR UPDATE` on bay
+and technician rows plus exclusion constraints, not a separate distributed lock
+service. The AI moved fast on the code; the shaping and the verification were
+mine.

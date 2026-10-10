@@ -28,11 +28,11 @@ The collection runs a collection-level pre-request script that keeps `desiredAt`
 | 2 | Service types / Dealership / Vehicle | reference data resolves |
 | 3 | **Search slots** | advisory search returns ranked slots; stores `bayId`, `technicianId`, `startAt`, `endAt` |
 | 4 | **Book appointment** | `201` with `status: HELD`; stores `appointmentId` |
-| 5 | **Book the same slot again** | `409 { error: "slot_taken", next_available }` — no double booking |
+| 5 | **Book the same slot again** | `409 { error: "slot_taken", next_available }`; no double booking |
 | 6 | Confirm → Get → Cancel | `HELD → CONFIRMED → CANCELLED` lifecycle |
 | 7 | Technician calendar / Dealership capacity | diary read views |
 
-Because step 3 stores the picked slot into the environment, steps 4–6 reuse it —
+Because step 3 stores the picked slot into the environment, steps 4-6 reuse it;
 run them in order. Re-running the whole collection with a fresh environment (the
 eye/refresh icon clears runtime values) exercises a new slot each time.
 

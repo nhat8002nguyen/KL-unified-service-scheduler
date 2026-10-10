@@ -1,7 +1,7 @@
 import type { ServiceTypeDetail } from '../catalog/catalog.types';
 import type { Dealership, ServiceBay, Technician } from '../resources/resources.types';
 
-/** A candidate booking window. Advisory only — the DB decides at commit. */
+/** A candidate booking window. Advisory only; the DB decides at commit. */
 export interface Slot {
   dealershipId: string;
   bayId: string;

@@ -1,4 +1,4 @@
-# Unified Service Scheduler — local stack.
+# Unified Service Scheduler - local stack.
 # `docker compose up --build` starts PostgreSQL 17 + the API (migrates + seeds on boot).
 services:
   db:
@@ -40,7 +40,7 @@ services:
 volumes:
   pgdata:
 
-# Optional observability add-ons — uncomment to scrape metrics / collect traces.
+# Optional observability add-ons: uncomment to scrape metrics / collect traces.
 #
 #  prometheus:
 #    image: prom/prometheus:latest

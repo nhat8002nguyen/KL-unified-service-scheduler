@@ -3,7 +3,7 @@
 The same flow as the Postman collection, for when Postman isn't available.
 Every command below is copy-pasteable.
 
-- Prefer a script? Run [`smoke.sh`](smoke.sh) — it walks the whole flow and
+- Prefer a script? Run [`smoke.sh`](smoke.sh); it walks the whole flow and
   checks each status: `BASE_URL=http://localhost:8080 ./curl/smoke.sh`
 - Prefer Postman? See [`../postman/README.md`](../postman/README.md).
 
@@ -101,13 +101,13 @@ APP_ID=$(curl -s -X POST "$BASE_URL/appointments" -H 'content-type: application/
 
 ## 5. The two guarantees
 
-**Idempotent retry** — same `idempotency_key` returns the same appointment (`200`; first create is `201`):
+**Idempotent retry**: same `idempotency_key` returns the same appointment (`200`; first create is `201`):
 
 ```bash
 # repeat the exact request from step 4 (same idempotency_key) -> same "id"
 ```
 
-**No double booking** — the *same slot* with a *new* key gets `409`:
+**No double booking**: the *same slot* with a *new* key gets `409`:
 
 ```bash
 curl -s -X POST "$BASE_URL/appointments" -H 'content-type: application/json' -d '{
@@ -132,7 +132,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE_URL/appointments/$APP_ID
 curl -s -o /dev/null -w '%{http_code}\n' "$BASE_URL/appointments/nope"                      # 404
 ```
 
-A cancelled appointment frees its interval — repeating step 4 with a fresh
+A cancelled appointment frees its interval; repeating step 4 with a fresh
 `idempotency_key` **after** cancel returns `201`, not `409`.
 
 ## 7. Diary views
