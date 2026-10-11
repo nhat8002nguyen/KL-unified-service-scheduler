@@ -6,3 +6,11 @@ coverage/
 .DS_Store
 .~lock.*
 .superpowers/
+
+# Assessment inputs and design docs kept local only (not part of the published repo).
+Scenario_A_Domain_Brief.pdf
+booking-flow-design-review.md
+docs/DEMO_SCRIPT.md
+keyloop_A_system_design.odt
+scenarioA-system-design.drawio.png
+system-design-document.md

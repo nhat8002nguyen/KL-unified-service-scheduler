@@ -1,0 +1,72 @@
+---
+description: Require Go-style JSDoc on new/changed functions
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# Function doc comments
+
+Whenever you **add** a function/method or **change** an existing one’s behavior or signature, put a JSDoc block immediately above it.
+
+## Style (Go godoc → JSDoc)
+
+- Use `/** ... */` with **no blank line** between the comment and the declaration.
+- First sentence **starts with the identifier name**.
+- **1–4 sentences**: prefer 1–2 for simple helpers; use up to 4 for complex flows.
+- Describe purpose at an abstract level (what/why), not a line-by-line walkthrough.
+- Skip `@param` / `@returns` / `@throws` unless already used nearby.
+- If you cannot summarize confidently, leave an empty `/** */` rather than inventing.
+
+## Include
+
+- Class methods (public/private), getters/setters
+- Exported and file-local `function` / `const fn = () =>`
+- Nest lifecycle hooks (`canActivate`, `handleConnection`, `onModuleInit`, …)
+
+## Skip
+
+- Nested callbacks / inline lambdas inside a method body
+- `interface` / `type` method signatures (no implementation)
+- Spec/fixture files (`*.spec.ts`, `*.e2e-spec.ts`, `*.fixture.ts`) unless you change a helper that deserves a doc
+
+## Examples
+
+```typescript
+// ❌ BAD — new/changed function, no doc
+async onBinary(bytes: Buffer): Promise<ServerTextMessage | undefined> {
+  // ...
+}
+
+// ✅ GOOD
+/**
+ * onBinary forwards one Opus frame into the active DictationSession buffer.
+ */
+async onBinary(bytes: Buffer): Promise<ServerTextMessage | undefined> {
+  // ...
+}
+
+// ✅ GOOD — complex (up to 4 sentences)
+/**
+ * transcribeAndFinalize sends assembled audio to speech-service, commits quota, and enqueues transcript persistence.
+ * Completes or fails the DictationSession based on provider and quota RPC outcomes.
+ * Does not log transcript text.
+ */
+private async transcribeAndFinalize(/* ... */) {
+  // ...
+}
+
+// ✅ OK when unsure
+/**
+ */
+private obscureHelper() {
+  // ...
+}
+```
+
+## Updating existing docs
+
+When editing a function that already has a doc, **update the existing comment in place**; do not add a second block.
+
+- A function/method/field must have **exactly one** JSDoc block. If the declaration already has a doc, edit that block — never insert a fresh one above the old.
+- Never leave a stale block behind. If the old sentences no longer hold, rewrite or delete them; do not append a new block while the old one remains.
+- If you find two adjacent blocks (a duplication mistake), merge them into one and delete the stale copy.
