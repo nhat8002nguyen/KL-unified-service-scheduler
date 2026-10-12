@@ -107,6 +107,61 @@ describe('GET /slots', () => {
       expect(slot.technicianId).not.toBe('leak-tech');
     }
   });
+
+  it('excludes active holds on the last horizon day even when they start after now+horizonDays', async () => {
+    // Mirrors the Oct-12-morning / Oct-19-10:00 hold bug: wall-clock now+7d ends mid-morning
+    // on the last searched calendar day, so afternoon holds were missing from busyIntervals.
+    const searchNow = '2026-10-12T09:04:00.000Z';
+    const holdStart = '2026-10-19T10:00:00.000Z';
+    const holdEnd = '2026-10-19T11:00:00.000Z';
+    const held = [{ bayId: 'b1', technicianId: 't1', startAt: holdStart, endAt: holdEnd }];
+
+    const appointments: AppointmentRepository = {
+      busyIntervals: async (_id, from, to) =>
+        held.filter(
+          (b) => Date.parse(b.startAt) < Date.parse(to) && Date.parse(b.endAt) > Date.parse(from),
+        ),
+      getById: async () => null,
+      createWithReserve: async () => ({ outcome: 'conflict' }),
+      updateStatus: async () => null,
+      releaseExpiredHolds: async () => [],
+    };
+    const service = new BookingServiceImpl({
+      catalog: {
+        getServiceTypeDetail: async (code) => (code === 'oil_change' ? oilChange : null),
+        listServiceTypes: async () => [oilChange],
+      },
+      vehicles: {
+        getByVin: async (vin) =>
+          vin === 'VIN1' ? { id: 'v1', vin, make: 'Honda', model: 'Civic', year: 2013 } : null,
+      },
+      dealerships: { getById: async (id) => (id === dealershipId ? dealership : null) },
+      bays: { listByDealership: async () => bays },
+      technicians: { listQualified: async () => technicians },
+      customers: { upsert: async () => ({ id: 'c1' }) },
+      appointments,
+      clock: () => new Date(searchNow),
+    });
+
+    const res = await request(buildApp({ booking: service }))
+      .get('/slots')
+      .query({
+        dealership_id: dealershipId,
+        service_type_code: 'oil_change',
+        vin: 'VIN1',
+        desired_at: holdStart,
+        horizon_days: 7,
+        limit: 50,
+      });
+
+    expect(res.status).toBe(200);
+    const slots = res.body.slots as { bayId: string; technicianId: string; startAt: string }[];
+    expect(
+      slots.some(
+        (s) => s.bayId === 'b1' && s.technicianId === 't1' && s.startAt === holdStart,
+      ),
+    ).toBe(false);
+  });
 });
 
 // Referenced so the fixture type stays honest if AvailabilityContext changes.
