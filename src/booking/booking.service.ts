@@ -3,7 +3,14 @@ import type { Slot } from '../availability/availability.types';
 import type { CatalogReader } from '../catalog/catalog.types';
 import { AppError } from '../common/errors';
 import { minutesBetween } from '../common/time';
-import { hhMmToMinutes, localMinuteOfDay, localWeekday, sameLocalDay } from '../common/tz';
+import {
+  hhMmToMinutes,
+  localDateOf,
+  localMinuteOfDay,
+  localWeekday,
+  sameLocalDay,
+  zonedWallClockUtc,
+} from '../common/tz';
 import type {
   Dealership,
   DealershipReader,
@@ -70,8 +77,21 @@ export class BookingServiceImpl implements BookingService {
     if (!vehicle) throw new AppError(404, 'NOT_FOUND', `Unknown VIN ${query.vin}`);
     if (!dealership) throw new AppError(404, 'NOT_FOUND', `Unknown dealership ${query.dealershipId}`);
 
+    // findSlots walks local calendar days [today, today+horizonDays] inclusive.
+    // A wall-clock window of now+horizonDays ends mid-day on the last day and
+    // misses afternoon holds there; load busy through local midnight after that day.
     const from = now.toISOString();
-    const to = new Date(now.getTime() + horizonDays * 86_400_000).toISOString();
+    const startDay = localDateOf(now, dealership.timezone);
+    const endExclusive = new Date(
+      Date.UTC(startDay.year, startDay.month - 1, startDay.day + horizonDays + 1),
+    );
+    const to = zonedWallClockUtc(
+      endExclusive.getUTCFullYear(),
+      endExclusive.getUTCMonth() + 1,
+      endExclusive.getUTCDate(),
+      '00:00',
+      dealership.timezone,
+    ).toISOString();
 
     const [bays, technicians, busy] = await Promise.all([
       this.deps.bays.listByDealership(query.dealershipId),
