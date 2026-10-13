@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/vehicles/{{vin}}"
+method: GET
+scripts:
+  - type: afterResponse
+    code: pm.test('200 with the vehicle', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().vin).to.eql(pm.environment.get('vin')); });
+    language: text/javascript
+order: 3000

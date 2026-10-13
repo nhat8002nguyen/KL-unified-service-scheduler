@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{baseUrl}}/dealerships/{{dealershipId}}/capacity?from={{from}}&to={{to}}"
+method: GET
+queryParams:
+  from: "{{from}}"
+  to: "{{to}}"
+scripts:
+  - type: afterResponse
+    code: pm.test('200 with bays and technicians', () => { pm.response.to.have.status(200); const b = pm.response.json(); pm.expect(b.bays).to.be.an('array'); pm.expect(b.technicians).to.be.an('array'); });
+    language: text/javascript
+order: 2000

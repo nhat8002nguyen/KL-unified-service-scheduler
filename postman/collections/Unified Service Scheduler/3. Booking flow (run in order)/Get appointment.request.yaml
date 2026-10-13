@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{baseUrl}}/appointments/{{appointmentId}}"
+method: GET
+scripts:
+  - type: afterResponse
+    code: pm.test('200 CONFIRMED', () => { pm.response.to.have.status(200);
+      pm.expect(pm.response.json().appointment.status).to.eql('CONFIRMED'); });
+    language: text/javascript
+order: 5750

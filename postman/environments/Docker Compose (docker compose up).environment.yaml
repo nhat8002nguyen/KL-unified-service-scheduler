@@ -1,0 +1,26 @@
+name: Docker Compose (docker compose up)
+values:
+  - key: baseUrl
+    value: 'http://localhost:8080'
+  - key: dealershipId
+    value: 00000000-0000-0000-0000-000000000100
+  - key: vin
+    value: 1HGCM82633A004352
+  - key: serviceTypeCode
+    value: diagnostic
+  - key: desiredAt
+    value: ''
+  - key: from
+    value: ''
+  - key: to
+    value: ''
+  - key: bayId
+    value: ''
+  - key: technicianId
+    value: ''
+  - key: startAt
+    value: ''
+  - key: endAt
+    value: ''
+  - key: appointmentId
+    value: ''

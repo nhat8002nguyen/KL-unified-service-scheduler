@@ -1,0 +1,22 @@
+$kind: collection
+description: |-
+  Scenario A — Unified Service Scheduler.
+
+  Run the requests top to bottom: **Search slots** stores the chosen bay/technician/time into the environment, and **Book appointment** stores the appointment id. Every response has test assertions.
+
+  Start the app first (`docker compose up --build`, or `npm run dev` against a PostgreSQL 17) and pick an environment.
+variables:
+  baseUrl: http://localhost:8080
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Refresh the time-based variables used by the slot search and diary views.
+      const dayMs = 86400000;
+      const now = Date.now();
+      const desired = pm.environment.get('desiredAt');
+      if (!desired || Date.parse(desired) < now) { pm.environment.set('desiredAt', new Date(now + dayMs).toISOString()); }
+      const from = pm.environment.get('from');
+      if (!from || Date.parse(from) < now - 30 * dayMs) { pm.environment.set('from', new Date(now).toISOString()); }
+      const to = pm.environment.get('to');
+      if (!to || Date.parse(to) < now) { pm.environment.set('to', new Date(now + 7 * dayMs).toISOString()); }
+    language: text/javascript

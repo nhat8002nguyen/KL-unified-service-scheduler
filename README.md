@@ -218,76 +218,25 @@ BASE_URL=http://localhost:8080 ./curl/smoke.sh
 
 I used an AI agent as the main implementer and as a second pair of eyes on the
 design, never as the authority. Three habits did the work: **plan before
-code**, **encode standards as rules the agent must follow**, and **verify every
-claim against a test or a primary source, never against the agent's own
-summary**. (The design-phase half of this story is §5 of
+code**, **encode standards as rules**, and **verify every claim against a test
+or a primary source**. (Design-phase half: Section 5 of
 [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).)
 
-### Directing it
+- **Directed with a written plan.** `docs/superpowers/plans/` fixed the
+  non-negotiables (DB decides double-booking, duration-aware slots, dealership
+  isolation, UTC) and per-task acceptance criteria. Work ran one module at a
+  time against those files. Standards lived in versioned rules (e.g.
+  `.reasonix/rules/`), not chat reminders.
+- **Verified with tests, not summaries.** "Never double-booked" is proved by
+  `test/integration/concurrency.test.ts` (one `201`, one `409` under real
+  Postgres). Unit / contract / integration each have a job; Postman is gated by
+  `test/contract/postman.test.ts`.
+- **Caught real mistakes.** The agent said PostgreSQL 15+; partitioned
+  `EXCLUDE` needs 17+ with the partition key in the constraint - caught in the
+  docs, not the paraphrase. An adversarial review pass (commit `13686bb`) fixed
+  five defects, including non-partial exclusion constraints that left cancelled
+  appointments blocking bays.
 
-- **A written plan, not a chat transcript.** `docs/superpowers/plans/` holds the
-  plans the build followed: goal, global constraints, failure modes no happy-path
-  test would catch, and per-task acceptance criteria. Work was executed task by
-  task against those files.
-- **Constraints stated once, up front.** The plan fixes the non-negotiables:
-  only the DB decides no double booking, a 4 h job must never be offered in a
-  2 h gap, a bay or technician from another dealership must never be offered,
-  UTC-only timestamps; so they could not be quietly re-litigated later.
-- **Standards as rules, not reminders.** `.reasonix/rules/function-doc-comments.mdc`
-  pins the doc-comment style for TypeScript files; commit `4e17f57` applies it to
-  every function in `src/`. The rule is versioned with the code, so the standard
-  outlives the session that produced it.
-- **One module at a time.** The history is a sequence of small, reviewable steps:
-  availability engine → `GET /slots` → transactional reserve → lifecycle +
-  reaper → diary views, each committed with its own tests, so a wrong direction
-  could not spread across the build.
-
-### Verifying it
-
-- **The central claim has a test, not a paragraph.** "Never double-booked" is
-  proved by `test/integration/concurrency.test.ts`: two concurrent
-  `POST /appointments` for the same slot (different idempotency keys) against
-  real PostgreSQL must produce exactly one `201` and one `409`.
-- **Three levels, each with a job.** Unit (`test/unit/`) for interval algebra,
-  the availability engine and the state machine; contract (`test/contract/`) for
-  endpoint behaviour over fake adapters with supertest; integration
-  (`test/integration/`) for the real schema, hash partitioning, reserve +
-  idempotency, lifecycle, reaper, and the race.
-- **The harness is verified too.** `test/contract/postman.test.ts` fails if the
-  Postman collection is invalid JSON, uses an undefined `{{variable}}`, or
-  contains a request with no assertion.
-- **An adversarial review pass, turned into fixes.** Commit `13686bb` is one
-  review round that found and fixed five real defects: Docker build deps,
-  `EXCLUDE` constraints that were not *partial* (a cancelled appointment kept
-  blocking its bay), same-day slot handling, concurrent idempotency, and a
-  destructive seed.
-- **Primary sources beat an agent's summary.** Where the agent asserted a
-  database fact, I checked it in the PostgreSQL documentation rather than
-  accepting the paraphrase.
-
-### What the AI got wrong, and what caught it
-
-- **`PostgreSQL 15+` was wrong.** Partitioned tables only accept an `EXCLUDE`
-  constraint from PostgreSQL 17 (15/16 allow it on each leaf partition only), and
-  the constraint must include the partition key compared with `=`. Caught by
-  checking the PostgreSQL docs; the plan file had it right and the design
-  document was corrected to 17+.
-- **Diagram / document drift.** Reviewing the exported architecture image against
-  the written design caught stale labels and layout issues (connectors through
-  container labels) before they shipped in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
-- **A SQL snippet that would not have run.** The exclusion constraints compare
-  UUID columns with `=`, which needs `btree_gist`; migration `001_catalog.ts`
-  installs it, and the design document's snippet shows it.
-- **Contract drift.** The Postman collection is checked by
-  `test/contract/postman.test.ts`; `curl/smoke.sh` asserts every status code it
-  prints.
-
-### What I own
-
-The decisions and constraints the build had to satisfy (DB-authoritative booking,
-advisory search, partial exclusion constraints, outbox stub with no transport),
-the design review, the diagram, the acceptance tests, and the text of this README
-and the design document. Serialization uses Postgres `SELECT … FOR UPDATE` on bay
-and technician rows plus exclusion constraints, not a separate distributed lock
-service. The AI moved fast on the code; the shaping and the verification were
-mine.
+I own the decisions and constraints, the design review, the acceptance tests,
+and this README. The AI moved fast on the code; the shaping and verification
+were mine.

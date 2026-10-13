@@ -1,0 +1,12 @@
+$kind: http-request
+name: Cancel appointment  (-> CANCELLED)
+url: "{{baseUrl}}/appointments/{{appointmentId}}/cancel"
+method: POST
+body:
+  type: text
+  content: ""
+scripts:
+  - type: afterResponse
+    code: pm.test('200 CANCELLED', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointment.status).to.eql('CANCELLED'); });
+    language: text/javascript
+order: 6000
