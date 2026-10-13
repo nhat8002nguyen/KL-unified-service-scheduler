@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/healthz"
+method: GET
+scripts:
+  - type: afterResponse
+    code: "pm.test('200 ok', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.eql({ status: 'ok' }); });"
+    language: text/javascript
+order: 1000

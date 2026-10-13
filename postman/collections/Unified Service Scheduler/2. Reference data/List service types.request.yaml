@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/service-types"
+method: GET
+scripts:
+  - type: afterResponse
+    code: pm.test('200 with service types', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().service_types.length).to.be.above(0); });
+    language: text/javascript
+order: 1000

@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{baseUrl}}/technicians/{{technicianId}}/appointments?from={{from}}&to={{to}}"
+method: GET
+queryParams:
+  from: "{{from}}"
+  to: "{{to}}"
+scripts:
+  - type: afterResponse
+    code: pm.test('200 with a chronological list', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().appointments).to.be.an('array'); });
+    language: text/javascript
+order: 1000

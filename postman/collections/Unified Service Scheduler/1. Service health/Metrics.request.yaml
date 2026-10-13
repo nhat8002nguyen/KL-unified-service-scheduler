@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/metrics"
+method: GET
+scripts:
+  - type: afterResponse
+    code: pm.test('200 and exposes booking counters', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('appointments_total'); });
+    language: text/javascript
+order: 3000

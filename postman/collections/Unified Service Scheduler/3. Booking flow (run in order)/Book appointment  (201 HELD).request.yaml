@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{baseUrl}}/appointments"
+method: POST
+headers:
+  content-type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "dealership_id": "{{dealershipId}}",
+      "service_type_code": "{{serviceTypeCode}}",
+      "vin": "{{vin}}",
+      "customer": { "name": "Postman Customer", "phone": "+441234567890", "email": "postman@example.com" },
+      "bay_id": "{{bayId}}",
+      "technician_id": "{{technicianId}}",
+      "start_at": "{{startAt}}",
+      "end_at": "{{endAt}}",
+      "idempotency_key": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('201 HELD', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().appointment.status).to.eql('HELD'); });
+      const appt = pm.response.json().appointment;
+      if (appt) { pm.environment.set('appointmentId', appt.id); }
+    language: text/javascript
+order: 2000

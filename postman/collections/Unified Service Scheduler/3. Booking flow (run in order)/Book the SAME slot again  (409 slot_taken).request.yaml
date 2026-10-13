@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{baseUrl}}/appointments"
+method: POST
+headers:
+  content-type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "dealership_id": "{{dealershipId}}",
+      "service_type_code": "{{serviceTypeCode}}",
+      "vin": "{{vin}}",
+      "customer": { "name": "Second Customer", "email": "second@example.com" },
+      "bay_id": "{{bayId}}",
+      "technician_id": "{{technicianId}}",
+      "start_at": "{{startAt}}",
+      "end_at": "{{endAt}}",
+      "idempotency_key": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test('409 slot_taken with alternatives', () => { pm.response.to.have.status(409); const b = pm.response.json(); pm.expect(b.error).to.eql('slot_taken'); pm.expect(b.next_available).to.be.an('array'); });
+    language: text/javascript
+order: 3000

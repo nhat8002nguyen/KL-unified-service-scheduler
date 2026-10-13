@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{baseUrl}}/slots?dealership_id={{dealershipId}}&service_type_code={{serviceTypeCode}}&vin={{vin}}&desired_at={{desiredAt}}&horizon_days=7"
+method: GET
+queryParams:
+  dealership_id: "{{dealershipId}}"
+  service_type_code: "{{serviceTypeCode}}"
+  vin: "{{vin}}"
+  desired_at: "{{desiredAt}}"
+  horizon_days: "7"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200 with at least one slot', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().slots.length).to.be.above(0); });
+      const slots = pm.response.json().slots || [];
+      if (slots.length) {
+        pm.environment.set('bayId', slots[0].bayId);
+        pm.environment.set('technicianId', slots[0].technicianId);
+        pm.environment.set('startAt', slots[0].startAt);
+        pm.environment.set('endAt', slots[0].endAt);
+        console.log('picked slot', slots[0]);
+      }
+      // A 422 for a past desired_at is the documented behaviour; guard the happy path.
+    language: text/javascript
+order: 1000
